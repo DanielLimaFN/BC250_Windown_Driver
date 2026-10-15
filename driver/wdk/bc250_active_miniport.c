@@ -160,8 +160,12 @@ static volatile LONG64 g_Bc250ActiveCpuVisibleBytes = 0;
  * (SMU_HANDSHAKE_DISABLE) = 1, por RMW (Lei 6), antes de ligar o F32.
  * 1 = handshake desligado (prova: bit 23 lido em 1); 0 = handshake ligado
  * (bit 23 a 0, como as corridas 244 e 247).
+ * C03 (doc 764): religada. A 248 (com, ~8 s) e a 248b (sem, ~22 s) foram n=1
+ * cada, dentro da dispersao. O Nagi roda estavel com RLC rodando e este mesmo
+ * ramo (pp_gfxoff=0 em WDDM, referencias/amdgpu-wddm driver/kmd/gfx.c:361-365),
+ * e o amdgpu sem GFXOFF tambem o toma.
  */
-#define BC250_RLC1B_SMU_HANDSHAKE_OFF 0
+#define BC250_RLC1B_SMU_HANDSHAKE_OFF 1
 #if BC250_RLC1B_SMU_HANDSHAKE_OFF
 #define BC250_RLC1_EXPECTED_WRITES 6u
 #define BC250_RLC1_EXPECTED_HANDSHAKE_BIT 0x00800000u
@@ -179,6 +183,15 @@ static volatile LONG64 g_Bc250ActiveCpuVisibleBytes = 0;
  */
 #define BC250_GFXRST1_LIKE_AMDGPU 1
 /*
+ * C05 (doc 764): no quiesce do TDR do GFX, antes do GFXRST.1, a soft recovery
+ * do amdgpu (amdgpu_ring_soft_recovery + gfx_v10_0_ring_soft_recovery): SQ_CMD
+ * mata as ondas da VMID do ultimo IB, repetido ate o GFX ficar ocioso ou 10 ms.
+ * O Nagi recupera assim um dispatch sem fim (fato M-hang-recovery-b22). Nossa
+ * mineracao (doc 630) mostrou ondas presas e erros do SQ depois do reset.
+ * 0 = sem wave kill.
+ */
+#define BC250_C05_WAVE_KILL_NO_TDR 1
+/*
  * G.1 (doc 645): golden settings do Cyan Skillfish aplicados como
  * gfx_v10_0_init_golden_registers (soc15_program_register_sequence com
  * golden_settings_gc_10_0_cyan_skillfish, a mesma tabela de
@@ -190,6 +203,15 @@ static volatile LONG64 g_Bc250ActiveCpuVisibleBytes = 0;
  * devolve os originais em ordem inversa. 0 = goldens do firmware.
  */
 #define BC250_G1_GOLDEN_LIKE_AMDGPU 1
+/*
+ * C01 (doc 764): o resto do estado de init que o amdgpu deixa nesta placa e
+ * nos nao escreviamos (SH_MEM_CONFIG/BASES por VMID, quantum do SDMA, faixas
+ * dos engines de invalidacao 2..16; o GDS fica de fora de proposito), achado pelo
+ * rastro E03 do Nagi. Detalhe e procedencia em bc250_c01_init_parity.h.
+ * 1 = logo depois da G.1, com snapshot, readback e restauracao no teardown.
+ * 0 = como ate a 301.
+ */
+#define BC250_C01_INIT_PARITY 1
 #define BC250_COMPOSITE_PROOF_FIRST 16
 #define BC250_P3_IH_GART_FIRST_ENTRY 128u
 #define BC250_P3_IH_RING_BYTES (256u * 1024u)
@@ -214,6 +236,15 @@ static volatile LONG64 g_Bc250ActiveCpuVisibleBytes = 0;
  * nao tem interrupcao aqui. Diferenca declarada: o amdgpu nao tem esse timer.
  */
 #define BC250_CP_EOP_IRQ 1
+/*
+ * C06 (doc 764): junto com o EOP, os erros do CP no anel grafico, como o
+ * amdgpu deixa o CP_INT_CNTL_RING0 nesta placa (rastro E03 do Nagi:
+ * 0x04000000 -> 0x04800000 -> 0x04C00000 -> 0x05C00000): PRIV_INSTR (22),
+ * PRIV_REG (23) e OPCODE_ERROR (24). O ISR so' conta ([C06_CP_ERRO]).
+ * 0 = so' o TIME_STAMP, como ate a 301.
+ */
+#define BC250_C06_CP_ERRO_IRQ 1
+#define BC250_CP_INT_CNTL_RING0_C06_ERRO_MASK 0x01C00000u
 /*
  * P4.1 (doc 620): SDMA1 vivo e ocioso, como o amdgpu deixa as duas instancias
  * (sdma_v5_0_gfx_resume). 1 = firmware pelo PSP (tipo 10) junto com o do SDMA0,
@@ -379,8 +410,15 @@ static BOOLEAN Bc250ActiveRlc1Resume(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
 static VOID Bc250ActiveRlc1Disarm(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why);
 static VOID Bc250ActiveGfxRst1SoftReset(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 static VOID Bc250ActiveGfxRst1PostReset(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+static VOID Bc250ActiveGfxRst2Escalate(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, uint32_t Stage);
+static VOID Bc250ActiveC05WaveKill(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+static VOID Bc250ActiveClk1Apply(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, BOOLEAN Restore);
+static VOID Bc250ActiveDpm1Start(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+static VOID Bc250ActiveDpm1Stop(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why);
 static VOID Bc250ActiveG1ApplyGolden(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 static VOID Bc250ActiveG1RestoreGolden(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why);
+static VOID Bc250ActiveC01ApplyInitParity(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+static VOID Bc250ActiveC01RestoreInitParity(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why);
 static VOID Bc250ActiveMec1Disarm(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why);
 static VOID Bc250ActiveP4Sdma1Start(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 static VOID Bc250ActiveP4Sdma1Stop(
@@ -391,6 +429,7 @@ static uint32_t Bc250ActiveFlushMmhubTlb(void *Context);
 static VOID Bc250ActiveMmhubGartDisable(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why);
 static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context);
+static VOID Bc250ActiveD2GartMirrorReservation(BC250_DXGK_ACTIVE_CONTEXT *Context);
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 static VOID Bc250ActiveArmVramCpuViaDram(_In_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 static VOID Bc250ActiveArmPaValidatorRanges(_In_ BC250_DXGK_ACTIVE_CONTEXT *Context);
@@ -402,6 +441,15 @@ static uint32_t Bc250ActiveFaultLatchWrite32(
     void *Context, uint32_t ByteOffset, uint32_t Value);
 /* DX.35: numeracao da linha do tempo de faltas amostrada nas trocas de VMID. */
 static volatile LONG s_Bc250FaultTimelineSeq = 0;
+/* APU.1 (doc 739, Corrida 288): Modelo de Memoria Unificada APU para BC-250 (16 GB GDDR6). */
+static volatile LONG g_Bc250ApuUnifiedMemory = 0;
+/*
+ * COMP.VA.3 (doc 745): geracao da tabela de paginas dos donos que a janela
+ * da composicao mapeia. O UpdatePageTable do dono (ou sem dono) a incrementa;
+ * a janela so' e' reutilizada sem caminhar de novo se ela nao mudou.
+ */
+static volatile LONG g_Bc250CompVaPtGeneration = 0;
+static PVOID volatile g_Bc250CompVaOwner[2] = { NULL, NULL };
 static NTSTATUS Bc250ActiveEnsureGlobalMmu(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     const char *Origin);
@@ -1556,6 +1604,10 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
             (void)Bc250ActiveGfxEngineOffline(Context);
             return STATUS_DEVICE_HARDWARE_ERROR;
         }
+        /* GFXRST.2: o restart do TDR reemite este CSB e reprograma o RLC_CSIB. */
+        Context->GfxEngine.CsbMc = csbMc;
+        Context->GfxEngine.CsbDwords = csbDwords;
+        Context->GfxEngine.CsbCpu = csbCpu;
 
         /* 1..4. o conteudo do CSB no anel (gfx_v10_0_cp_gfx_start sem SET_BASE) */
         for (csbIdx = 0u; csbIdx < csbDwords; ++csbIdx) {
@@ -1629,6 +1681,10 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
 #if BC250_C1_GFX_DOORBELL
     (void)Bc250ActiveC1GfxDoorbellArm(Context, "ONLINE");
 #endif
+    /* CLK.1 (doc 762): depois do GFX provado, uma vez por StartDevice. */
+    Bc250ActiveClk1Apply(Context, FALSE);
+    /* C08 / DPM.1 (doc 765): governador de clock; idempotente. */
+    Bc250ActiveDpm1Start(Context);
     Bc250DisplayLog("[GfxEngine] ONLINE SUCESSO: RingMc=0x%llX (64KB, %u dw) RptrWbMc=0x%llX FenceMc=0x%llX RB0_ACTIVE=1 Anel=%s CsbVram=0x%llX\n",
         (unsigned long long)Context->GfxEngine.RingGpuVa, Context->GfxEngine.RingDwords,
         (unsigned long long)Context->GfxEngine.RptrWbGpuVa,
@@ -1853,6 +1909,8 @@ static NTSTATUS Bc250ActiveGfxEngineOffline(BC250_DXGK_ACTIVE_CONTEXT *Context)
     }
 
     Bc250ActiveP7UnmapGfxRing(Context);
+    Context->GfxEngine.CsbCpu = NULL;
+    Context->GfxEngine.CsbDwords = 0u;
     if (Context->GfxEngine.VramCpuMapped != NULL) {
         MmUnmapIoSpace(Context->GfxEngine.VramCpuMapped, (SIZE_T)Context->GfxEngine.VramTotalBytes);
         Context->GfxEngine.VramCpuMapped = NULL;
@@ -5272,6 +5330,10 @@ static NTSTATUS Bc250ActiveDestroyProcessLifecycle(
         (BC250_MCDM_HANDLE)ProcessHandle);
 }
 
+static void Bc250ActiveJournalTaintPurgeProcess(
+    _In_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ BC250_MCDM_HANDLE Process);
+
 NTSTATUS Bc250ActiveDestroyProcessObject(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_MCDM_HANDLE Handle)
@@ -5320,6 +5382,23 @@ NTSTATUS Bc250ActiveDestroyProcessObject(
         Handle,
         Context->GpuvaSpace.PageTableEpoch,
         Context->GpuvaSpace.LiveCount);
+    {
+        uint32_t slot;
+        for (slot = 0u; slot < BC250_ACTIVE_GPUVA_JOURNAL_SLOTS; ++slot) {
+            if (Context->GpuvaJournals[slot].Signature == BC250_GPUVA_JOURNAL_SIGNATURE &&
+                Context->GpuvaJournals[slot].Process == Handle) {
+                Bc250GpuvaJournalAbort(&Context->GpuvaJournals[slot]);
+            }
+        }
+    }
+    if (Context->GpuvaHierarchyPending != 0u &&
+        Context->GpuvaHierarchyProcess == Handle) {
+        Context->GpuvaHierarchyPending = 0u;
+        Context->GpuvaHierarchyProcess = NULL;
+        Context->GpuvaHierarchyRootPageTable = 0u;
+        Context->GpuvaHierarchyHighestLevel = 0u;
+    }
+    Bc250ActiveJournalTaintPurgeProcess(Context, Handle);
     status = Bc250McdmObjectDestroy(&Context->Objects, Handle,
         BC250_MCDM_OBJECT_PROCESS, Handle);
     ExReleasePushLockExclusive(&Context->ObjectLock);
@@ -6097,7 +6176,8 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                         refuseReason = "TAMANHO_ACIMA_DE_SIZE_T";
                     } else if (context->AllocationSegmentSet != 1u || context->AllocationSegmentBytes == 0u) {
                         refuseReason = "SEGMENTO_DE_ALOCACAO_NAO_CONFIGURADO";
-                    } else if (request.ByteSize > context->AllocationSegmentBytes) {
+                    } else if (request.ByteSize > context->AllocationSegmentBytes &&
+                               (g_Bc250ApuUnifiedMemory == 0L || Bc250AllocationIsPrimary(&request))) {
                         refuseReason = "TAMANHO_ACIMA_DO_SEGMENTO";
                     }
                     if (refuseReason != NULL) {
@@ -6111,7 +6191,7 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                         refuseReason = "SEM_ABI_TAMANHO_ACIMA_DE_SIZE_T";
                     } else if (context->AllocationSegmentSet != 1u || context->AllocationSegmentBytes == 0u) {
                         refuseReason = "SEM_ABI_SEGMENTO_NAO_CONFIGURADO";
-                    } else if (allocSize > context->AllocationSegmentBytes) {
+                    } else if (allocSize > context->AllocationSegmentBytes && g_Bc250ApuUnifiedMemory == 0L) {
                         refuseReason = "SEM_ABI_TAMANHO_ACIMA_DO_SEGMENTO";
                     }
                     if (refuseReason != NULL) {
@@ -6234,10 +6314,63 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                  * verificacao. A primariedade continua vivendo onde de fato vive:
                  * no token privado e em `Flags.Resource` do lado do dxgkrnl.
                  */
-                info->SupportedReadSegmentSet =
-                    context->AllocationSegmentSet;
-                info->SupportedWriteSegmentSet =
-                    context->AllocationSegmentSet;
+                /*
+                 * APU.2 (Corrida 289): Modelo de Memoria Unificada APU para BC-250 (16 GB GDDR6).
+                 * Em uma APU real com barramento compartilhado de 448 GB/s, a VRAM e' apenas um
+                 * carveout da RAM do sistema. Para evitar transferencias desnecessarias no SDMA0
+                 * (2.683 transferencias na Corrida 288 copiando 479 MB com 71,9% de pico no SDMA0),
+                 * alocacoes nao-primarias preferem diretamente o Segmento 2 (RAM 12 GB) com
+                 * transbordo para o Segmento 1 (VRAM 256 MB): PreferredSegment.SegmentId0 = 2u,
+                 * SegmentId1 = 1u.
+                 * A primaria de display (DCN HUBP0) permanece estritamente travada no Segmento 1
+                 * com AllocationPriority = MAXIMUM para estabilidade linear absoluta de scanout.
+                 */
+                /*
+                 * APU.2c (doc 742): politica de segmento da APU.2 em fonte unica,
+                 * Bc250AllocationApuSegmentPolicy. Buffer de comando so' no 1 (DX.43
+                 * le o DW0 do IB pela VRAM: 0x116 da Corrida 289); superficie da UMD
+                 * sem GPU_VA_ONLY prefere o 1 (a composicao do KMD resolve so' VRAM:
+                 * tela preta da 290, COMPOSITE_BLT 0 OK / 160 recusados); o resto
+                 * prefere o 2.
+                 */
+                BC250_ALLOCATION_SEGMENT_POLICY apuPolicy;
+                if (g_Bc250ApuUnifiedMemory != 0L &&
+                    Bc250AllocationApuSegmentPolicy(&request, &apuPolicy)) {
+                    static volatile LONG s_Bc250ApuAllocCount[3] = {0, 0, 0};
+                    const ULONG apuKind = apuPolicy.SegmentSet == 0x1u ? 0u :
+                        (apuPolicy.Preferred0 == 1u ? 1u : 2u);
+                    static const char *const apuKindName[3] = {
+                        "COMANDO_SO_VRAM", "UMD_COMPOSICAO_VRAM_PRIMEIRO", "SISTEMA_PRIMEIRO" };
+                    LONG apuCount = InterlockedIncrement(&s_Bc250ApuAllocCount[apuKind]);
+                    info->SupportedReadSegmentSet = apuPolicy.SegmentSet;
+                    info->SupportedWriteSegmentSet = apuPolicy.SegmentSet;
+                    info->PreferredSegment.Value = 0u;
+                    info->PreferredSegment.SegmentId0 = apuPolicy.Preferred0;
+                    info->PreferredSegment.SegmentId1 = apuPolicy.Preferred1;
+                    info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_NORMAL;
+                    if (apuCount <= 8 || (apuCount % 256) == 0) {
+                        Bc250DisplayLog("[APU_ALLOC] %s #%ld Token=0x%llX Size=%llu Flags=0x%X SegSet=0x%X Preferido=%u,%u\n",
+                            apuKindName[apuKind], apuCount,
+                            (unsigned long long)request.AllocationToken,
+                            (unsigned long long)request.ByteSize, request.Flags,
+                            apuPolicy.SegmentSet, apuPolicy.Preferred0, apuPolicy.Preferred1);
+                    }
+                } else if (Bc250AllocationIsPrimary(&request)) {
+                    info->SupportedReadSegmentSet =
+                        context->AllocationSegmentSet;
+                    info->SupportedWriteSegmentSet =
+                        context->AllocationSegmentSet;
+                    info->PreferredSegment.Value = 0u;
+                    info->PreferredSegment.SegmentId0 = 1u;
+                    info->PreferredSegment.SegmentId1 = 0u;
+                    info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_MAXIMUM;
+                } else {
+                    info->SupportedReadSegmentSet =
+                        context->AllocationSegmentSet;
+                    info->SupportedWriteSegmentSet =
+                        context->AllocationSegmentSet;
+                    info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_NORMAL;
+                }
                 /*
                  * T3.9: EvictionSegmentSet = 0u para todas as alocacoes.
                  * A Corrida 178 comprovou que configurar EvictionSegmentSet = 2u com
@@ -6282,7 +6415,11 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                  * Prioridade normal vale para todas as classes de alocacao;
                  * nao promove a textura compartilhada a primaria.
                  */
-                info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_NORMAL;
+                if (Bc250AllocationIsPrimary(&request)) {
+                    info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_MAXIMUM;
+                } else {
+                    info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_NORMAL;
+                }
                 BOOLEAN cpuVisible = FALSE;
                 if (Bc250AllocationIsPrimary(&request) ||
                     Bc250AllocationRequiresCpuAccess(&request)) {
@@ -6372,6 +6509,12 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 if (CreateAllocation->Flags.Resource != 0u &&
                     Bc250AllocationIsPrimary(&request)) {
                     info->FlagsWddm2.AccessedPhysically = 1u;
+                    info->SupportedReadSegmentSet = context->AllocationSegmentSet;
+                    info->SupportedWriteSegmentSet = context->AllocationSegmentSet;
+                    info->PreferredSegment.Value = 0u;
+                    info->PreferredSegment.SegmentId0 = 1u;
+                    info->PreferredSegment.SegmentId1 = 0u;
+                    info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_MAXIMUM;
                     /*
                      * 13/09 -- NAO CLOBBER. Ate esta faixa este ramo era
                      * inalcancavel para alocacao de UMD (Flags.Resource era
@@ -6959,7 +7102,9 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 pending0, pending1);
         }
     }
+    Bc250TdrStep("quiesce: SDMA0 (RB_ENABLE off, F32 halt) vai comecar");
     result = Bc250SdmaPresentQuiesceForTdr(&snapshot);
+    Bc250TdrStep("quiesce: SDMA0 voltou result=%u", result ? 1u : 0u);
 
     /* Corrida 215: foto da GART de cada adaptador antes de qualquer restart. */
     KeEnterCriticalRegion();
@@ -7618,6 +7763,7 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
                     BC250_GFX_REG_CP_ME_CNTL, &cpMeCntl);
 
+                Bc250TdrStep("quiesce: GFX lido (snapshot), seguem dumps do anel/pacotes");
                 Bc250DisplayLog("[TDR_GFX_QUIESCE] Snapshot: Active=%u RPTR=%u WPTR=%u GrbmStatus=0x%08X CpMeCntl=0x%08X\n",
                     cpRb0Active, cpRb0Rptr, cpRb0Wptr, grbmStatus, cpMeCntl);
 #if BC250_C1_GFX_DOORBELL
@@ -8068,6 +8214,15 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                         bcastWritten, bcastReadback, BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
                 }
 
+                /* C05 (doc 764): soft recovery do amdgpu antes do soft-reset.
+                 * Se as ondas morrerem e o GFX ficar ocioso, o GFXRST.1 abaixo
+                 * le GRBM_STATUS sem nada ocupado e nao pulsa o reset. */
+                if (BC250_C05_WAVE_KILL_NO_TDR) {
+                    Bc250TdrStep("quiesce: C05 wave kill (SQ_CMD) vai comecar");
+                    Bc250ActiveC05WaveKill(activeCtx);
+                    Bc250TdrStep("quiesce: C05 wave kill voltou");
+                }
+
                 /* DX.45: marca de telemetria -- o reset que vem a seguir e' NOSSO;
                  * o detector nao pode atribui-lo a terceiros. Nao muda o fluxo. */
                 InterlockedExchange(&s_Bc250Dx45OwnQuiesce, 1);
@@ -8075,7 +8230,9 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 if (BC250_GFXRST1_LIKE_AMDGPU) {
                     /* GFXRST.1 (doc 642): gfx_v10_0_soft_reset. O CP_RB0 e'
                      * rearmado no restart, como no caminho antigo. */
+                    Bc250TdrStep("quiesce: GFXRST1 soft-reset (RLC stop, ME/MEC halt, GRBM_SOFT_RESET) vai comecar");
                     Bc250ActiveGfxRst1SoftReset(activeCtx);
+                    Bc250TdrStep("quiesce: GFXRST1 soft-reset voltou");
                     activeCtx->GfxEngine.State = 0u;
                     Bc250DisplayLog("[TDR_GFX_QUIESCE] soft-reset do GFX como o amdgpu (GFXRST.1) executado\n");
                     break;
@@ -8216,6 +8373,7 @@ static BOOLEAN Bc250ActiveTdrProveGfxRestart(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
     uint32_t cursor = 0u;
+    uint32_t csbEmitted = 0u;
     uint32_t poll;
     uint32_t rptr = 0u;
     uint32_t fenceObserved = BC250_GFX_FENCE_POISON;
@@ -8236,6 +8394,21 @@ static BOOLEAN Bc250ActiveTdrProveGfxRestart(
         proofFence = (uint32_t)proofFence64;
     }
 
+    /*
+     * GFXRST.2 (doc 759): o anel recomeca como no boot e no
+     * gfx_v10_0_cp_gfx_start do amdgpu -- o CSB (PREAMBLE/CONTEXT_CONTROL/
+     * SET_CONTEXT_REG/CLEAR_STATE) antes de qualquer trabalho. Ate a 297 o
+     * restart mandava so' NOPs; depois de um soft-reset do CP o estado de
+     * contexto zerado ficava sem defaults.
+     */
+    if (Context->GfxEngine.CsbCpu != NULL && Context->GfxEngine.CsbDwords != 0u &&
+        Context->GfxEngine.CsbDwords + 32u < Context->GfxEngine.RingDwords) {
+        uint32_t i;
+        for (i = 0u; i < Context->GfxEngine.CsbDwords; ++i) {
+            Context->GfxEngine.RingCpuVirtual[cursor++] = Context->GfxEngine.CsbCpu[i];
+        }
+        csbEmitted = Context->GfxEngine.CsbDwords;
+    }
     Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
     Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
     Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
@@ -8247,8 +8420,11 @@ static BOOLEAN Bc250ActiveTdrProveGfxRestart(
         Context->GfxEngine.FenceGpuVa,
         proofFence,
         BC250_PM4_RELEASE_MEM_INT_SEL_NONE);
-    if (pm4Status != BC250_PM4_OK || cursor != 12u) {
+    if (pm4Status != BC250_PM4_OK || cursor != csbEmitted + 12u) {
         return FALSE;
+    }
+    while ((cursor & 3u) != 0u) {
+        Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
     }
 
     *Context->GfxEngine.FenceCpuVirtual = BC250_GFX_FENCE_POISON;
@@ -8281,24 +8457,46 @@ static BOOLEAN Bc250ActiveTdrProveGfxRestart(
             Context->GfxEngine.LastSubmitVmid = 0xFFFFFFFFu; /* DX.29: anel vazio apos o restart */
             Context->GfxEngine.LastRetiredFence = proofFence64;
             Context->GfxEngine.LastRptrMmio = rptr;
-            Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] PASS: NOPx4+RELEASE_MEM executados RPTR=%u WPTR=%u Fence=0x%08X PoisonSubstituido=1 Polls=%u\n",
-                rptr, cursor, fenceObserved, poll + 1u);
+            Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] PASS: CSB(%u dw)+NOPx4+RELEASE_MEM executados RPTR=%u WPTR=%u Fence=0x%08X PoisonSubstituido=1 Polls=%u\n",
+                csbEmitted, rptr, cursor, fenceObserved, poll + 1u);
             return TRUE;
         }
     }
 
-    Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] FALHA: RPTR=%u WPTR=%u FenceObs=0x%08X FenceEsp=0x%08X Polls=%u\n",
-        rptr, cursor, fenceObserved, proofFence, poll);
+    Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] FALHA: CSB=%u dw RPTR=%u WPTR=%u FenceObs=0x%08X FenceEsp=0x%08X Polls=%u\n",
+        csbEmitted, rptr, cursor, fenceObserved, proofFence, poll);
+    /* GFXRST.2: so' leitura, dos registradores que o restart ja' le/escreve. */
+    {
+        uint32_t cpStat = 0u, meCntl = 0u, rbCntl = 0u, pollCntl = 0u, dbCntl = 0u;
+        uint32_t rlcCntl = 0u, grbm = 0u, gfxCntl = 0u, active = 0u, rbVmid = 0u;
+        BC250_MMIO_TOPOLOGY_CONTEXT *t = &Context->Core.MmioTransport;
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_STAT, &cpStat);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_ME_CNTL, &meCntl);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_RB0_CNTL, &rbCntl);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_RB_WPTR_POLL_CNTL, &pollCntl);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_RB_DOORBELL_CONTROL, &dbCntl);
+        (void)Bc250MmioTopologyRead32(t, BC250_REG_RLC_CNTL, &rlcCntl);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_GRBM_STATUS, &grbm);
+        (void)Bc250MmioTopologyRead32(t, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &gfxCntl);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_RB0_ACTIVE, &active);
+        (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_RB_VMID, &rbVmid);
+        Bc250DisplayLog("[TDR_GFX_RESTART_DIAG] CP_STAT=0x%08X CP_ME_CNTL=0x%08X CP_RB0_CNTL=0x%08X POLL_CNTL=0x%08X DOORBELL_CONTROL=0x%08X RLC_CNTL=0x%08X GRBM_STATUS=0x%08X GRBM_GFX_CNTL=0x%08X RB_ACTIVE=%u CP_RB_VMID=0x%08X\n",
+            cpStat, meCntl, rbCntl, pollCntl, dbCntl, rlcCntl, grbm, gfxCntl, active, rbVmid);
+    }
     return FALSE;
 }
 
 static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
 {
-    BOOLEAN sdmaRestart = Bc250SdmaPresentRestartAfterTdrOrRevert();
+    BOOLEAN sdmaRestart;
     BOOLEAN mecRestart = TRUE;
     BOOLEAN gfxRestart = TRUE;
     BOOLEAN fenceReconcile = TRUE;
     uint32_t dirIdx;
+
+    Bc250TdrStep("restart: SDMA0 (reset integral + NOP/fence) vai comecar");
+    sdmaRestart = Bc250SdmaPresentRestartAfterTdrOrRevert();
+    Bc250TdrStep("restart: SDMA0 voltou ok=%u", sdmaRestart ? 1u : 0u);
 
     KeEnterCriticalRegion();
     ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
@@ -8335,14 +8533,49 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
                 }
             }
 
+            /*
+             * GFXRST.2 (doc 759): escada de tres etapas, cada uma provada por
+             * execucao (CSB + NOPs + RELEASE_MEM sobre poison):
+             *   0  -- o reset do quiesce (GFXRST.1, o que a 289 e a 297 mediram
+             *         falhando: o CP_RB0 nao andou);
+             *   1  -- amdgpu completo: rlc_stop, halt, CP|GFX|CPF|CPG|RLC,
+             *         rlc_resume e RLC_CSIB reprogramado;
+             *   2  -- o regime em que o restart passou 212 vezes ate a 240:
+             *         RLC parado (RLC.1 desarmada) e CP|GFX|CPF|CPG.
+             * A primeira que provar fica; nenhuma prova = DEVICE_NOT_READY.
+             */
+            {
+            uint32_t gfxStage;
+            BOOLEAN gfxStageOk = FALSE;
+            for (gfxStage = 0u; gfxStage < 3u && !gfxStageOk; ++gfxStage) {
+            if (gfxStage > 0u) {
+                Bc250TdrStep("restart GFX etapa %u: escalonamento do reset vai comecar", gfxStage);
+                Bc250ActiveGfxRst2Escalate(activeCtx, gfxStage);
+                Bc250TdrStep("restart GFX etapa %u: escalonamento voltou", gfxStage);
+            }
+
             /* GFXRST.1 (doc 642): rlc_resume e CP_MEC_CNTL antes do CP_RB0. */
             if (BC250_GFXRST1_LIKE_AMDGPU) {
+                Bc250TdrStep("restart GFX etapa %u: pos-reset (rlc_resume, CP_MEC_CNTL) vai comecar", gfxStage);
                 Bc250ActiveGfxRst1PostReset(activeCtx);
+                Bc250TdrStep("restart GFX etapa %u: pos-reset voltou; rearme do CP_RB0", gfxStage);
             }
 
             /* Rearma CP_RB0 */
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                 BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
+            /* GFXRST.2: registradores do anel do GFX no pipe 0, como o
+             * switch_pipe(PIPE_ID0) do gfx_v10_0_cp_gfx_resume; CP_RB_VMID 0. */
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB_VMID, 0u);
+            if (gfxStage == 1u && activeCtx->GfxEngine.CsbMc != 0ull &&
+                activeCtx->GfxEngine.CsbDwords != 0u) {
+                /* O reset do RLC zera o RLC_CSIB (gfx_v10_0_init_csb no rlc_resume). */
+                (void)Bc250ActiveProgramClearStateBuffer(activeCtx,
+                    activeCtx->GfxEngine.CsbMc, activeCtx->GfxEngine.CsbDwords);
+            }
             /* CP_RB0_BASE recebe GPUVA >> 8. Na Corrida 43 este caminho
              * escrevia RingGpuVa bruto (inclusive no HI), apontando o CP para
              * uma base 256 vezes errada; o caminho ONLINE ja usava o formato
@@ -8397,6 +8630,7 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
             activeCtx->GfxEngine.LastRetiredFence = activeCtx->GfxEngine.LastSubmittedFence;
 
             /* Unhalt ME */
+            Bc250TdrStep("restart GFX etapa %u: CP_RB0 programado; vai soltar o ME e ativar o anel", gfxStage);
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                 BC250_GFX_REG_CP_ME_CNTL, 0u);
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
@@ -8444,16 +8678,27 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
                     Bc250TdrStatusName(gfxStatus), active, rptr, wptr, meCntl, grbmReset);
                 gfxRestart = FALSE;
                 activeCtx->GfxEngine.State = 0u;
-            } else if (!Bc250ActiveTdrProveGfxRestart(activeCtx)) {
-                Bc250DisplayLog("[TDR_GFX_RESTART] FALHA: registradores rearmados, mas o CP_RB0 nao executou NOP+RELEASE_MEM\n");
+            } else if ((Bc250TdrStep("restart GFX etapa %u: readback ok; prova por execucao (CSB+NOP+RELEASE_MEM) vai comecar", gfxStage),
+                        !Bc250ActiveTdrProveGfxRestart(activeCtx))) {
+                Bc250DisplayLog("[TDR_GFX_RESTART] FALHA: registradores rearmados, mas o CP_RB0 nao executou NOP+RELEASE_MEM (GFXRST2 etapa %u)\n",
+                    gfxStage);
                 gfxRestart = FALSE;
                 activeCtx->GfxEngine.State = 0u;
             } else {
+                gfxRestart = TRUE;
+                gfxStageOk = TRUE;
                 activeCtx->GfxEngine.State = 1u;
-                Bc250DisplayLog("[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado por execucao fisica\n");
+                Bc250DisplayLog("[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado por execucao fisica (GFXRST2 etapa %u)\n",
+                    gfxStage);
 #if BC250_C1_GFX_DOORBELL
                 (void)Bc250ActiveC1GfxDoorbellArm(activeCtx, "TDR_RESTART");
 #endif
+            }
+            }
+            Bc250TdrStep("restart GFX: escada terminou ok=%u", gfxStageOk ? 1u : 0u);
+            Bc250DisplayLog("[GFXRST2] #%ld restart do GFX: %s\n",
+                (long)InterlockedIncrement(&activeCtx->GfxRst2Count),
+                gfxStageOk ? "PROVADO" : "NENHUMA ETAPA PROVOU -- DEVICE_NOT_READY");
             }
         }
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
@@ -8461,6 +8706,7 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
             activeCtx->SubmissionEngine.State == BC250_SUBMISSION_ENGINE_ONLINE) {
             uint32_t active = 0u, rptr = 0u, wptr = 0u, err = 0u, deq = 0u, stall = 0u;
             BC250_TDR_STATUS mecStatus;
+            Bc250TdrStep("restart: MEC (fila de compute) vai ser reprogramado");
 
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                 BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
@@ -8509,6 +8755,8 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
     }
     ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
+    Bc250TdrStep("restart: fim SDMA0=%u GFX=%u MEC=%u fences=%u", sdmaRestart ? 1u : 0u,
+        gfxRestart ? 1u : 0u, mecRestart ? 1u : 0u, fenceReconcile ? 1u : 0u);
 
     if (sdmaRestart && mecRestart && gfxRestart && fenceReconcile) {
         KeEnterCriticalRegion();
@@ -8790,6 +9038,414 @@ static BOOLEAN Bc250ActivePlatformProbe(_Out_ BC250_MCDM_PLATFORM_SAMPLE *Sample
     ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
     return measured;
+}
+
+/*
+ * SMU.1/SMU.2: Leitura periodica via mailbox do SMU v11.8:
+ *  - Msg 0x37: PPSMC_MSG_GetGfxFrequency (MHz)
+ *  - Msg 0x38: PPSMC_MSG_GetGfxVid (mV / VID)
+ *  - Msg 0x02: PPSMC_MSG_GetSmuVersion
+ * Procedencia: amdgpu cyan_skillfish_ppt.c / smu_v11_8_ppsmc.h.
+ * Executa sob g_Bc250SmnIndexLock; timeout limitado a 2 ms com stalls curtos de 5 us por mensagem.
+ */
+static BOOLEAN Bc250ActiveSmuSendMsg(
+    volatile ULONG *base,
+    uint32_t msg,
+    uint32_t param,
+    uint32_t *outVal)
+{
+    uint32_t resp = 0u;
+    uint32_t elapsedUs = 0u;
+
+    /* 1. Limpa status anterior (C2PMSG_66 = 0x03B10A68) */
+    WRITE_REGISTER_ULONG(base + (0x38u / 4u), 0x03B10A68u);
+    (void)READ_REGISTER_ULONG(base + (0x38u / 4u));
+    WRITE_REGISTER_ULONG(base + (0x3Cu / 4u), 0u);
+
+    /* 2. Escreve argumento (C2PMSG_82 = 0x03B10A48) */
+    WRITE_REGISTER_ULONG(base + (0x38u / 4u), 0x03B10A48u);
+    (void)READ_REGISTER_ULONG(base + (0x38u / 4u));
+    WRITE_REGISTER_ULONG(base + (0x3Cu / 4u), param);
+
+    /* 3. Dispara a mensagem (C2PMSG_67 = 0x03B10A08) */
+    WRITE_REGISTER_ULONG(base + (0x38u / 4u), 0x03B10A08u);
+    (void)READ_REGISTER_ULONG(base + (0x38u / 4u));
+    WRITE_REGISTER_ULONG(base + (0x3Cu / 4u), msg);
+
+    /* 4. Aguarda confirmacao do SMU (C2PMSG_66 != 0, resp == 1 e' OK) */
+    while (elapsedUs < 2000u) {
+        WRITE_REGISTER_ULONG(base + (0x38u / 4u), 0x03B10A68u);
+        (void)READ_REGISTER_ULONG(base + (0x38u / 4u));
+        resp = READ_REGISTER_ULONG(base + (0x3Cu / 4u));
+        if (resp != 0u) break;
+        KeStallExecutionProcessor(5u);
+        elapsedUs += 5u;
+    }
+
+    if (resp == 1u) {
+        /* 5. Le o resultado retornado (C2PMSG_82 = 0x03B10A48) */
+        if (outVal != NULL) {
+            WRITE_REGISTER_ULONG(base + (0x38u / 4u), 0x03B10A48u);
+            (void)READ_REGISTER_ULONG(base + (0x38u / 4u));
+            *outVal = READ_REGISTER_ULONG(base + (0x3Cu / 4u));
+        }
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static BOOLEAN Bc250ActiveSmuClockProbe(
+    _Out_ UINT32 *GfxclkMhz,
+    _Out_opt_ UINT32 *GfxVidMv,
+    _Out_opt_ UINT32 *SmuVersion,
+    _Out_opt_ UINT32 *DriverIfVersion,
+    _Out_opt_ UINT32 *SmuFeatures,
+    _Out_opt_ UINT32 *CorePstate,
+    _Out_opt_ UINT32 *TargetGfxclk)
+{
+    uint32_t dirIdx;
+    BOOLEAN ok = FALSE;
+
+    if (GfxclkMhz == NULL) return FALSE;
+    *GfxclkMhz = 0u;
+    if (GfxVidMv != NULL) *GfxVidMv = 0u;
+    if (SmuVersion != NULL) *SmuVersion = 0u;
+    if (DriverIfVersion != NULL) *DriverIfVersion = 0u;
+    if (SmuFeatures != NULL) *SmuFeatures = 0u;
+    if (CorePstate != NULL) *CorePstate = 0u;
+    if (TargetGfxclk != NULL) *TargetGfxclk = 0u;
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (dirIdx = 0u; dirIdx < BC250_ACTIVE_MAX_ADAPTERS; ++dirIdx) {
+        BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
+        BC250_MMIO_TOPOLOGY_CONTEXT *mmio;
+        volatile ULONG *base;
+        KIRQL oldIrql;
+
+        if (activeCtx == NULL || activeCtx->Signature != BC250_ACTIVE_SIGNATURE ||
+            activeCtx->Core.MmioTransport.State != BC250_MMIO_TOPOLOGY_MAPPED ||
+            activeCtx->Core.MmioTransport.VirtualBase == NULL ||
+            activeCtx->GfxEngine.State != 1u) {
+            continue;
+        }
+        mmio = &activeCtx->Core.MmioTransport;
+        base = (volatile ULONG *)mmio->VirtualBase;
+
+        KeAcquireSpinLock(&g_Bc250SmnIndexLock, &oldIrql);
+
+        /* 1. Consulta frequencia GFXCLK (Msg 0x37: PPSMC_MSG_GetGfxFrequency) */
+        ok = Bc250ActiveSmuSendMsg(base, 0x37u, 0u, GfxclkMhz);
+
+        /* 2. Consulta tensao VDDGFX em mV (Msg 0x38: PPSMC_MSG_GetGfxVid) */
+        if (ok && GfxVidMv != NULL) {
+            (void)Bc250ActiveSmuSendMsg(base, 0x38u, 0u, GfxVidMv);
+        }
+
+        /* 3. Consulta versao do firmware do SMU (Msg 0x02: PPSMC_MSG_GetSmuVersion) */
+        if (ok && SmuVersion != NULL) {
+            (void)Bc250ActiveSmuSendMsg(base, 0x02u, 0u, SmuVersion);
+        }
+
+        /* 4. Consulta versao da interface do driver (Msg 0x03: PPSMC_MSG_GetDriverIfVersion) */
+        if (ok && DriverIfVersion != NULL) {
+            (void)Bc250ActiveSmuSendMsg(base, 0x03u, 0u, DriverIfVersion);
+        }
+
+        /* 5. Consulta mascara de features habilitadas do SMU (Msg 0x3D: PPSMC_MSG_GetEnabledSmuFeatures) */
+        if (ok && SmuFeatures != NULL) {
+            (void)Bc250ActiveSmuSendMsg(base, 0x3Du, 0u, SmuFeatures);
+        }
+
+        /* 6. Consulta P-State do core (Msg 0x0C: PPSMC_MSG_QueryCorePstate) */
+        if (ok && CorePstate != NULL) {
+            (void)Bc250ActiveSmuSendMsg(base, 0x0Cu, 0u, CorePstate);
+        }
+
+        /* 7. Consulta GFXCLK alvo solicitado (Msg 0x0F: PPSMC_MSG_QueryGfxclk) */
+        if (ok && TargetGfxclk != NULL) {
+            (void)Bc250ActiveSmuSendMsg(base, 0x0Fu, 0u, TargetGfxclk);
+        }
+
+        KeReleaseSpinLock(&g_Bc250SmnIndexLock, oldIrql);
+        break;
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+
+    return ok;
+}
+
+/*
+ * CLK.1 (Corrida 301, doc 762): clock do GFX pela SMU, como o
+ * cyan_skillfish_ppt.c do amdgpu (PP_OD_COMMIT_DPM_TABLE): RequestGfxclk (0xE)
+ * com o clock em MHz e UnforceGfxVid (0x3C) -- a tensao fica com o firmware.
+ * Faixa do amdgpu: 1000..2000 MHz. Na 300 o [SMU1] leu GFXCLK fixo em 1500 MHz
+ * (P0) com a GPU 5-48% ocupada. Chave GfxClkMhz (INF; 0 = nao mexe). O alvo
+ * lido antes (QueryGfxclk, 0xF) volta no StopDevice (Restore=TRUE).
+ * Procedencia dos numeros: smu_v11_8_ppsmc.h e cyan_skillfish_ppt.c (P1).
+ */
+static VOID Bc250ActiveClk1Apply(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, BOOLEAN Restore)
+{
+    ULONG requested;
+    volatile ULONG *base;
+    KIRQL oldIrql;
+    uint32_t curBefore = 0u, tgtBefore = 0u, vidBefore = 0u;
+    uint32_t curAfter = 0u, tgtAfter = 0u, vidAfter = 0u;
+    BOOLEAN okReq, okUnforce;
+
+    if (Context == NULL || Context->Core.MmioTransport.State != BC250_MMIO_TOPOLOGY_MAPPED ||
+        Context->Core.MmioTransport.VirtualBase == NULL ||
+        InterlockedCompareExchange(&g_Bc250SmnIndexLockReady, 0, 0) == 0) {
+        return;
+    }
+    if (Restore) {
+        if (InterlockedExchange(&Context->Clk1Applied, 0) == 0 || Context->Clk1OriginalTargetMhz == 0u) {
+            return;
+        }
+        requested = Context->Clk1OriginalTargetMhz;
+    } else {
+        requested = Bc250ActiveReadTunable(L"GfxClkMhz", 0u);
+        if (requested == 0u) {
+            Bc250DisplayLog("[CLK1] GfxClkMhz=0: clock do GFX nao alterado (firmware decide)\n");
+            return;
+        }
+        if (requested < 1000u || requested > 2000u) {
+            Bc250DisplayLog("[CLK1] RECUSADO: GfxClkMhz=%lu fora da faixa 1000..2000 do amdgpu\n",
+                (unsigned long)requested);
+            return;
+        }
+        if (InterlockedCompareExchange(&Context->Clk1Applied, 0, 0) != 0) {
+            return;
+        }
+    }
+    base = (volatile ULONG *)Context->Core.MmioTransport.VirtualBase;
+    KeAcquireSpinLock(&g_Bc250SmnIndexLock, &oldIrql);
+    (void)Bc250ActiveSmuSendMsg(base, 0x37u, 0u, &curBefore);   /* GetGfxFrequency */
+    (void)Bc250ActiveSmuSendMsg(base, 0x0Fu, 0u, &tgtBefore);   /* QueryGfxclk */
+    (void)Bc250ActiveSmuSendMsg(base, 0x38u, 0u, &vidBefore);   /* GetGfxVid */
+    okReq = Bc250ActiveSmuSendMsg(base, 0x0Eu, (uint32_t)requested, NULL);  /* RequestGfxclk */
+    okUnforce = Bc250ActiveSmuSendMsg(base, 0x3Cu, 0u, NULL);  /* UnforceGfxVid */
+    KeStallExecutionProcessor(200u);
+    (void)Bc250ActiveSmuSendMsg(base, 0x37u, 0u, &curAfter);
+    (void)Bc250ActiveSmuSendMsg(base, 0x0Fu, 0u, &tgtAfter);
+    (void)Bc250ActiveSmuSendMsg(base, 0x38u, 0u, &vidAfter);
+    KeReleaseSpinLock(&g_Bc250SmnIndexLock, oldIrql);
+
+    if (!Restore && okReq) {
+        Context->Clk1OriginalTargetMhz = tgtBefore != 0u ? tgtBefore : curBefore;
+        InterlockedExchange(&Context->Clk1Applied, 1);
+    }
+    /* VID e' o codigo SVI2 do firmware: mV = 1550 - VID*1000/160 (cyan_skillfish_ppt.c). */
+    Bc250DisplayLog("[CLK1] %s: pedido=%lu MHz RequestGfxclk=%s UnforceGfxVid=%s | antes GFXCLK=%u alvo=%u VID=%u (~%u mV) | depois GFXCLK=%u alvo=%u VID=%u (~%u mV)\n",
+        Restore ? "DEVOLVIDO ao alvo original" : "APLICADO",
+        (unsigned long)requested, okReq ? "OK" : "RECUSADO", okUnforce ? "OK" : "RECUSADO",
+        curBefore, tgtBefore, vidBefore, vidBefore < 248u ? 1550u - (vidBefore * 1000u) / 160u : 0u,
+        curAfter, tgtAfter, vidAfter, vidAfter < 248u ? 1550u - (vidAfter * 1000u) / 160u : 0u);
+}
+
+/*
+ * C08 / DPM.1 (doc 765): governador de clock do GFX pela carga, com teto
+ * termico (politica em driver/core/bc250_dpm_contract.h). Chave DpmMaxMhz
+ * (INF; 0 = desligado, 1000..2000). Thread de sistema: amostra a cada ~5 ms
+ * se o GFX tem trabalho em voo (fence submetida > aposentada) -- so' memoria,
+ * nenhuma leitura de registrador nova --, decide a cada 100 ms, le o Tctl a
+ * cada 500 ms pelo par SMN da MON.1, e aplica pela SMU as mesmas mensagens da
+ * CLK.1 (RequestGfxclk 0xE + UnforceGfxVid 0x3C, tensao do firmware). Tres
+ * recusas da SMU seguidas: volta a 1500 MHz e o governador para.
+ */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+#define BC250_DPM1_SAMPLE_100NS   (-50000LL)   /* 5 ms relativos */
+#define BC250_DPM1_WINDOW_100NS   1000000ULL   /* 100 ms */
+#define BC250_DPM1_TCTL_100NS     5000000ULL   /* 500 ms */
+#define BC250_DPM1_CHECK_100NS    10000000ULL  /* 1 s: confere o clock na SMU */
+#define BC250_DPM1_LOG_100NS      50000000ULL  /* 5 s: linha [DPM1] */
+
+static BOOLEAN Bc250ActiveDpm1Smu(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, uint32_t Msg, uint32_t Param, uint32_t *Out)
+{
+    KIRQL oldIrql;
+    BOOLEAN ok;
+    if (Context->Core.MmioTransport.State != BC250_MMIO_TOPOLOGY_MAPPED ||
+        Context->Core.MmioTransport.VirtualBase == NULL ||
+        InterlockedCompareExchange(&g_Bc250SmnIndexLockReady, 0, 0) == 0) {
+        return FALSE;
+    }
+    KeAcquireSpinLock(&g_Bc250SmnIndexLock, &oldIrql);
+    ok = Bc250ActiveSmuSendMsg((volatile ULONG *)Context->Core.MmioTransport.VirtualBase, Msg, Param, Out);
+    KeReleaseSpinLock(&g_Bc250SmnIndexLock, oldIrql);
+    return ok;
+}
+
+static BOOLEAN Bc250ActiveDpm1Request(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, uint32_t Mhz)
+{
+    BOOLEAN okReq = Bc250ActiveDpm1Smu(Context, 0x0Eu, Mhz, NULL);    /* RequestGfxclk */
+    BOOLEAN okVid = Bc250ActiveDpm1Smu(Context, 0x3Cu, 0u, NULL);     /* UnforceGfxVid */
+    return (okReq && okVid) ? TRUE : FALSE;
+}
+
+static VOID Bc250ActiveDpm1Thread(_In_ PVOID StartContext)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *ctx = (BC250_DXGK_ACTIVE_CONTEXT *)StartContext;
+    LARGE_INTEGER wait;
+    ULONGLONG windowStart = KeQueryInterruptTime();
+    ULONGLONG lastTctl = 0ull, lastCheck = windowStart, lastLog = windowStart;
+    uint32_t samples = 0u, gfxBusy = 0u, tctl = 0u, failRun = 0u;
+    uint32_t lastBusy = 0u, readClk = 0u, readVid = 0u;
+
+    wait.QuadPart = BC250_DPM1_SAMPLE_100NS;
+    for (;;) {
+        ULONGLONG now;
+        if (KeWaitForSingleObject(&ctx->Dpm1StopEvent, Executive, KernelMode, FALSE, &wait) == STATUS_SUCCESS) {
+            break;
+        }
+        ++samples;
+        if (ctx->GfxEngine.LastSubmittedFence > ctx->GfxEngine.LastRetiredFence) ++gfxBusy;
+        now = KeQueryInterruptTime();
+        if (now - windowStart < BC250_DPM1_WINDOW_100NS) continue;
+
+        if (now - lastTctl >= BC250_DPM1_TCTL_100NS || lastTctl == 0ull) {
+            BC250_MCDM_PLATFORM_SAMPLE plat;
+            lastTctl = now;
+            tctl = (Bc250ActivePlatformProbe(&plat) && (plat.ReadMask & BC250_PLAT_READ_TCTL) != 0u &&
+                    plat.TctlMilliC > 0) ? (uint32_t)plat.TctlMilliC : 0u;
+            if (tctl > ctx->Dpm1MaxTctlMilliC) ctx->Dpm1MaxTctlMilliC = tctl;
+        }
+        lastBusy = samples != 0u ? (gfxBusy * 1000u) / samples : 0u;
+        {
+            uint32_t dtMs = (uint32_t)((now - windowStart) / 10000ull);
+            uint32_t before = ctx->Dpm1State.ClockMhz;
+            uint32_t want = Bc250DpmStep(&ctx->Dpm1State, lastBusy, tctl, dtMs);
+            if (want != before) {
+                if (Bc250ActiveDpm1Request(ctx, want)) {
+                    Bc250DpmCommit(&ctx->Dpm1State, want);
+                    if (want > ctx->Dpm1MaxSeenMhz) ctx->Dpm1MaxSeenMhz = want;
+                    failRun = 0u;
+                    if (InterlockedIncrement(&ctx->Dpm1Transitions) <= 32) {
+                        Bc250DisplayLog("[DPM1] %u -> %u MHz (ocupacao=%u permille media=%u Tctl=%u mC teto=%u)\n",
+                            before, want, lastBusy, ctx->Dpm1State.AvgPermille, tctl, ctx->Dpm1State.CapMhz);
+                    }
+                } else {
+                    InterlockedIncrement(&ctx->Dpm1SmuFailures);
+                    if (++failRun >= 3u) {
+                        Bc250DisplayLog("[DPM1] PARADO: tres recusas seguidas da SMU (pedido %u MHz); volta a %u MHz\n",
+                            want, BC250_DPM_FIRMWARE_MHZ);
+                        (void)Bc250ActiveDpm1Request(ctx, BC250_DPM_FIRMWARE_MHZ);
+                        break;
+                    }
+                }
+            }
+        }
+        if (now - lastCheck >= BC250_DPM1_CHECK_100NS) {
+            lastCheck = now;
+            if (Bc250ActiveDpm1Smu(ctx, 0x37u, 0u, &readClk) && readClk != 0u &&
+                (readClk + 50u < ctx->Dpm1State.ClockMhz || readClk > ctx->Dpm1State.ClockMhz + 50u)) {
+                InterlockedIncrement(&ctx->Dpm1Mismatches);
+            }
+        }
+        if (now - lastLog >= BC250_DPM1_LOG_100NS) {
+            lastLog = now;
+            (void)Bc250ActiveDpm1Smu(ctx, 0x38u, 0u, &readVid);   /* GetGfxVid, so' para o log */
+            Bc250DisplayLog("[DPM1] regime: clock=%u MHz (SMU leu %u, VID=%u ~%u mV) teto_termico=%u max=%u | ocupacao=%u media=%u permille | Tctl=%u mC (max %u) | trocas=%ld recusas=%ld divergencias=%ld maior_clock=%u\n",
+                ctx->Dpm1State.ClockMhz, readClk, readVid,
+                readVid != 0u && readVid < 248u ? 1550u - (readVid * 1000u) / 160u : 0u,
+                ctx->Dpm1State.CapMhz, ctx->Dpm1State.MaxMhz, lastBusy, ctx->Dpm1State.AvgPermille,
+                tctl, ctx->Dpm1MaxTctlMilliC, ctx->Dpm1Transitions, ctx->Dpm1SmuFailures,
+                ctx->Dpm1Mismatches, ctx->Dpm1MaxSeenMhz);
+        }
+        windowStart = now;
+        samples = 0u;
+        gfxBusy = 0u;
+    }
+    PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+#endif
+
+static VOID Bc250ActiveDpm1Start(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    ULONG maxMhz;
+    uint32_t cur = 0u, tgt = 0u;
+    NTSTATUS st;
+    if (Context == NULL || InterlockedCompareExchange(&Context->Dpm1Running, 0, 0) != 0) return;
+    maxMhz = Bc250ActiveReadTunable(L"DpmMaxMhz", 0u);
+    if (maxMhz == 0u) {
+        Bc250DisplayLog("[DPM1] DpmMaxMhz=0: governador desligado\n");
+        return;
+    }
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+        Bc250DisplayLog("[DPM1] NAO INICIADO: IRQL %u (precisa PASSIVE)\n", (unsigned)KeGetCurrentIrql());
+        return;
+    }
+    if (InterlockedCompareExchange(&Context->Clk1Applied, 0, 0) != 0) {
+        Bc250DisplayLog("[DPM1] NAO INICIADO: a CLK.1 fixou o clock (GfxClkMhz != 0); as duas nao convivem\n");
+        return;
+    }
+    (void)Bc250ActiveDpm1Smu(Context, 0x37u, 0u, &cur);   /* GetGfxFrequency */
+    (void)Bc250ActiveDpm1Smu(Context, 0x0Fu, 0u, &tgt);   /* QueryGfxclk */
+    Context->Dpm1OriginalTargetMhz = tgt != 0u ? tgt : (cur != 0u ? cur : BC250_DPM_FIRMWARE_MHZ);
+    Bc250DpmInit(&Context->Dpm1State, maxMhz, Context->Dpm1OriginalTargetMhz);
+    Context->Dpm1Transitions = 0;
+    Context->Dpm1SmuFailures = 0;
+    Context->Dpm1Mismatches = 0;
+    Context->Dpm1MaxSeenMhz = Context->Dpm1State.ClockMhz;
+    Context->Dpm1MaxTctlMilliC = 0u;
+    KeInitializeEvent(&Context->Dpm1StopEvent, NotificationEvent, FALSE);
+    InterlockedExchange(&Context->Dpm1Running, 1);
+    {
+        HANDLE h = NULL;
+        Context->Dpm1Thread = NULL;
+        st = PsCreateSystemThread(&h, THREAD_ALL_ACCESS, NULL, NULL, NULL, Bc250ActiveDpm1Thread, Context);
+        if (NT_SUCCESS(st)) {
+            st = ObReferenceObjectByHandle(h, SYNCHRONIZE, *PsThreadType, KernelMode,
+                &Context->Dpm1Thread, NULL);
+            ZwClose(h);
+            if (!NT_SUCCESS(st)) {
+                /* A thread ja roda: pede a parada e espera pelo flag dela. */
+                KeSetEvent(&Context->Dpm1StopEvent, IO_NO_INCREMENT, FALSE);
+                Context->Dpm1Thread = NULL;
+            }
+        }
+    }
+    if (!NT_SUCCESS(st)) {
+        InterlockedExchange(&Context->Dpm1Running, 0);
+        Context->Dpm1Thread = NULL;
+        Bc250DisplayLog("[DPM1] NAO INICIADO: PsCreateSystemThread 0x%08X\n", st);
+        return;
+    }
+    Bc250DisplayLog("[DPM1] INICIADO: faixa %u..%u MHz em passos de %u, partida %u MHz (firmware: atual %u alvo %u); sobe >= %u permille, desce < %u por %u ms; teto termico 87/90/82 C; tensao do firmware (UnforceGfxVid)\n",
+        BC250_DPM_MIN_MHZ, Context->Dpm1State.MaxMhz, BC250_DPM_STEP_MHZ, Context->Dpm1State.ClockMhz,
+        cur, tgt, BC250_DPM_UP_PERMILLE, BC250_DPM_DOWN_PERMILLE, BC250_DPM_DOWN_HOLD_MS);
+#else
+    UNREFERENCED_PARAMETER(Context);
+#endif
+}
+
+static VOID Bc250ActiveDpm1Stop(_Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_z_ const char *Why)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    uint32_t after = 0u;
+    BOOLEAN ok;
+    if (Context == NULL || InterlockedExchange(&Context->Dpm1Running, 0) == 0) return;
+    KeSetEvent(&Context->Dpm1StopEvent, IO_NO_INCREMENT, FALSE);
+    if (Context->Dpm1Thread != NULL) {
+        (void)KeWaitForSingleObject(Context->Dpm1Thread, Executive, KernelMode, FALSE, NULL);
+        ObDereferenceObject(Context->Dpm1Thread);
+        Context->Dpm1Thread = NULL;
+    }
+    ok = Bc250ActiveDpm1Request(Context, Context->Dpm1OriginalTargetMhz);
+    KeStallExecutionProcessor(200u);
+    (void)Bc250ActiveDpm1Smu(Context, 0x37u, 0u, &after);
+    Bc250DisplayLog("[DPM1] PARADO (%s): devolvido o alvo do firmware %u MHz (%s, SMU leu %u) | trocas=%ld recusas=%ld divergencias=%ld maior_clock=%u Tctl_max=%u mC\n",
+        Why, Context->Dpm1OriginalTargetMhz, ok ? "OK" : "RECUSADO", after,
+        Context->Dpm1Transitions, Context->Dpm1SmuFailures, Context->Dpm1Mismatches,
+        Context->Dpm1MaxSeenMhz, Context->Dpm1MaxTctlMilliC);
+#else
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Why);
+#endif
 }
 
 /*
@@ -9530,6 +10186,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                  * sdma hw_init. Falha aqui nao bloqueia o bring-up.
                  */
                 Bc250ActiveG1ApplyGolden(context);
+                /* C01 (doc 764): constantes do gfx/sdma/gmc hw_init do amdgpu. */
+                Bc250ActiveC01ApplyInitParity(context);
 
                 /* Carga de Firmware SDMA0 via PSP (Fail-Closed) */
                 context->PspRingStatus = Bc250ActiveProbePspRing(context, &context->PspRingEvidence);
@@ -10063,6 +10721,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                     Bc250DisplayLog("[DCN2] chave DcnExt=0x%02X (present=%u)\n", dcnExt, extPresent);
                     Bc250DisplaySetDcnExt(extPresent == 1u ? (dcnExt & BC250_DCN2_KEY_ALL) : 0u);
                 }
+                {
+                    /* APU.1 (Corrida 288): Modelo de Memoria Unificada APU (Segmentos 1 e 2). Padrao 1. */
+                    ULONG apuPresent = 0u;
+                    ULONG apuUnified = Bc250ActiveReadTunableChecked(
+                        L"ApuUnifiedMemory", 1u, &apuPresent);
+                    g_Bc250ApuUnifiedMemory = (apuPresent == 1u && apuUnified == 1u) ? 1L : 0L;
+                    Bc250DisplayLog("[APU_MEM] Modelo de Memoria Unificada APU (Segmentos 1 e 2): %s (chave=%u, present=%u)\n",
+                        g_Bc250ApuUnifiedMemory ? "ATIVO" : "DESATIVADO", apuUnified, apuPresent);
+                }
             }
 
 #if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
@@ -10477,6 +11144,7 @@ Bc250PhysicalRenderBringup:
                     context->SecondPreflightStage,
                     context->Core.ReadonlyGatePassed,
                     context->Core.MmioTransport.State);
+                Bc250ActiveD2GartMirrorReservation(context);
                 if (context->Core.ReadonlyGatePassed == 1u &&
                     context->Core.LastStage == BC250_DXGK_STAGE_PREFLIGHT_READY) {
                     context->HqdPreflightStatus =
@@ -12144,6 +12812,10 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
                          (ULONG)STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }
+    /* C08 / DPM.1 (doc 765): para o governador e devolve o alvo do firmware. */
+    Bc250ActiveDpm1Stop(context, "StopDevice");
+    /* CLK.1 (doc 762): devolve o alvo de clock do firmware antes do teardown. */
+    Bc250ActiveClk1Apply(context, TRUE);
     Bc250DisplayLog("[StopDevice] WDDM submissions: Accepted=%ld, NotExecuted=%ld, VMID8Status=%u, InstalledCtx=%p, Root=0x%llX\n",
         context->SubmissionsCount,
         context->SubmissionsNotExecutedCount,
@@ -12379,6 +13051,9 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
             sizeof(context->GlobalMmuDummyToken));
         RtlZeroMemory(&context->GlobalMmuAllocator,
             sizeof(context->GlobalMmuAllocator));
+        /* COMP.VA.3c: a reserva da tabela da GART morava nesse alocador. */
+        context->D2GartTableReserved = FALSE;
+        context->D2GartTableMirrored = FALSE;
     }
     if (!NT_SUCCESS(mmuRestoreNtStatus)) {
         Bc250ProbeRecordFirstFailure(mmuRestoreNtStatus);
@@ -13974,6 +14649,7 @@ static void Bc250ActiveJournalTaintClear(
 {
     KIRQL irql;
     uint32_t i;
+    uint32_t anyActive = 0u;
     KeAcquireSpinLock(&Context->JournalTaintLock, &irql);
     for (i = 0u; i < BC250_ACTIVE_JOURNAL_TAINT_SLOTS; ++i) {
         if (Context->JournalTaint[i].End != 0ull &&
@@ -13983,7 +14659,35 @@ static void Bc250ActiveJournalTaintClear(
             Context->JournalTaint[i].End = 0ull;
             Context->JournalTaint[i].Start = 0ull;
             Context->JournalTaint[i].Process = NULL;
+        } else if (Context->JournalTaint[i].End != 0ull) {
+            anyActive = 1u;
         }
+    }
+    if (anyActive == 0u) {
+        Context->JournalTaintAll = 0u;
+    }
+    KeReleaseSpinLock(&Context->JournalTaintLock, irql);
+}
+
+static void Bc250ActiveJournalTaintPurgeProcess(
+    _In_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ BC250_MCDM_HANDLE Process)
+{
+    KIRQL irql;
+    uint32_t i;
+    uint32_t anyActive = 0u;
+    KeAcquireSpinLock(&Context->JournalTaintLock, &irql);
+    for (i = 0u; i < BC250_ACTIVE_JOURNAL_TAINT_SLOTS; ++i) {
+        if (Context->JournalTaint[i].Process == Process) {
+            Context->JournalTaint[i].End = 0ull;
+            Context->JournalTaint[i].Start = 0ull;
+            Context->JournalTaint[i].Process = NULL;
+        } else if (Context->JournalTaint[i].End != 0ull) {
+            anyActive = 1u;
+        }
+    }
+    if (anyActive == 0u) {
+        Context->JournalTaintAll = 0u;
     }
     KeReleaseSpinLock(&Context->JournalTaintLock, irql);
 }
@@ -17154,8 +17858,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
                 occStatus = Bc250GpuvaSpaceDescribeOccupancy(
                     &active->GpuvaSnapshots.Slots[occSlot], &occupancy);
             }
-            Bc250DisplayLog("[ActiveFlushTlb] Journal status=0x%08X after HW GFXHUB flush -> STATUS_IO_DEVICE_ERROR "
-                "(PublishStatus=%ld Attempts=%ld Busy=%ld)\n",
+            Bc250DisplayLog("[ActiveFlushTlb] GPUVA.4: Journal status=0x%08X after HW GFXHUB flush -> STATUS_SUCCESS "
+                "(desacoplado de falha de capacidade do journal; PublishStatus=%ld Attempts=%ld Busy=%ld)\n",
                 journalStatus,
                 active->GpuvaSnapshots.LastPublishStatus,
                 active->GpuvaSnapshots.LastPublishAttempts,
@@ -17189,7 +17893,14 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
                 occupancy.Capacity, occupancy.Mapped,
                 occupancy.Teardown, occupancy.Reusable, occupancy.LiveCount);
         }
-        return STATUS_IO_DEVICE_ERROR;
+        /*
+         * GPUVA.4 (Corrida 289 / doc 740): a invalidacao fisica no silicio GFXHUB
+         * foi executada com sucesso antes deste bloco. A falha de insercao no
+         * journal de software (espelho em RAM) nao deve retornar STATUS_IO_DEVICE_ERROR
+         * ao sistema operacional, pois isso induz o DWM/VidMm a reiniciar superficies
+         * e provocar piscadas na tela ao encerrar processos 3D.
+         */
+        return STATUS_SUCCESS;
     }
     /* GpuvaMappingsOperational permanece zero até o ensaio integrado. */
     Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
@@ -17629,6 +18340,12 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
             update ? update->NumPageTableEntries : 0,
             update ? update->pPageTableEntries : NULL);
         return STATUS_INVALID_PARAMETER;
+    }
+    /* COMP.VA.3 (doc 745): a tabela de um dono mapeado na janela vai mudar. */
+    if (update->hProcess == NULL ||
+        (PVOID)update->hProcess == g_Bc250CompVaOwner[0] ||
+        (PVOID)update->hProcess == g_Bc250CompVaOwner[1]) {
+        InterlockedIncrement(&g_Bc250CompVaPtGeneration);
     }
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&active->ObjectLock);
@@ -18685,6 +19402,546 @@ static BOOLEAN Bc250ActiveEscapeResolveGpuVaToMc(
 }
 
 /*
+ * COMP.VA (doc 743) -- composicao pelo VA do processo, pela janela da GART.
+ *
+ * Corrida 290 (doc 742): com a APU.2 as superficies do DWM foram para o
+ * segmento 2 e o COMPOSITE_BLT, que so' resolve VRAM por MC, recusou 160 de
+ * 160 (tela preta). A copia passa a nao depender de onde a pagina mora: a
+ * tabela de paginas do PROCESSO DONO (a mesma raiz do DX.93, nunca de outro
+ * processo) da a PTE de cada pagina; a CPU copia essas PTEs para uma janela da
+ * GART da VMID 0 e o SDMA copia por ela, com a invalidacao da VMID 0 no anel
+ * antes da copia. E' o que o amdgpu faz em amdgpu_ttm_map_buffer (janela de
+ * GTT do buffer_funcs_ring). So' roda quando a resolucao por MC falha; o
+ * caminho provado (4.907 OK na 288) segue igual. Validado na Corrida 291
+ * (doc 744): >= 6.144 composicoes, zero falha.
+ *
+ * COMP.VA.2 (doc 745): a janela e' um recurso unico; quem chega com ela
+ * ocupada ESPERA (mutex guardado), em vez de ser recusado. Na 291 as 5
+ * recusas por "janela ocupada" foram os 5 Present E_FAIL do SearchApp.
+ *
+ * COMP.VA.3 (doc 745): a GART do GFXHUB passou a 32 MB. As entradas 0..511
+ * seguem o mapa antigo (MEC, D2, P7, IH, SDMA1); a janela ocupa 512..8191,
+ * 3.840 paginas por lado, e a tela inteira (2.700 paginas) cabe numa copia so'
+ * (na 291 eram 22 pedacos). O mapeamento fica PERSISTENTE: enquanto a mesma
+ * origem (VA, raiz e dono) estiver na janela e a tabela do dono nao mudar
+ * (geracao bumpada no UpdatePageTable do dono, mais 3 PTEs conferidas na
+ * tabela real), a composicao nao relê nem regrava PTE e nao invalida a TLB:
+ * vira uma copia.
+ *
+ * PTE copiada sem fragmento (bits 11:7) e sem bits acima do MTYPE; VALID e a
+ * permissao (leitura na origem, escrita no destino) sao exigidas.
+ */
+#define BC250_COMPVA_GART_FIRST        BC250_GCVM_GART_LEGACY_ENTRIES
+#define BC250_COMPVA_GART_WINDOW_PAGES \
+    ((BC250_GCVM_GART_ENTRIES - BC250_GCVM_GART_LEGACY_ENTRIES) / 2u)
+#define BC250_COMPVA_GART_SRC_FIRST    BC250_COMPVA_GART_FIRST
+#define BC250_COMPVA_GART_DST_FIRST    (BC250_COMPVA_GART_FIRST + BC250_COMPVA_GART_WINDOW_PAGES)
+#define BC250_COMPVA_PTE_KEEP_MASK \
+    (0x7Full | BC250_GCVM_GART_PTE_ADDR_MASK | 0x0007000000000000ull)
+#define BC250_COMPVA_LOG_FIRST 16
+#define BC250_COMPVA_SIDE_SRC 0u
+#define BC250_COMPVA_SIDE_DST 1u
+
+typedef struct BC250_COMPVA_SIDE {
+    volatile uint64_t *Table;   /* tabela a que o estado abaixo se refere */
+    uint32_t Mapped;            /* entradas da janela fora da dummy */
+    BOOLEAN Valid;              /* mapeamento reutilizavel */
+    uint64_t PageVa;
+    uint32_t Pages;
+    uint64_t RootMc;
+    LONG Generation;
+    uint32_t SystemPages;
+} BC250_COMPVA_SIDE;
+
+static KGUARDED_MUTEX g_Bc250CompVaMutex;
+static volatile LONG g_Bc250CompVaMutexState = 0;
+static volatile uint64_t *g_Bc250CompVaDummyTable = NULL;
+static uint64_t g_Bc250CompVaDummyPte = 0ull;
+static BC250_COMPVA_SIDE g_Bc250CompVaSide[2];
+static volatile LONG g_Bc250CompVaOk = 0;
+static volatile LONG g_Bc250CompVaRefused = 0;
+static volatile LONG g_Bc250CompVaWaited = 0;
+static volatile LONG g_Bc250CompVaReused = 0;
+static volatile LONG g_Bc250CompVaRemapped = 0;
+
+static BOOLEAN Bc250CompVaShouldLog(volatile LONG *Counter, LONG *Value)
+{
+    const LONG v = InterlockedIncrement(Counter);
+    if (Value != NULL) *Value = v;
+    return (v <= BC250_COMPVA_LOG_FIRST || (v % 256) == 0) ? TRUE : FALSE;
+}
+
+/* COMP.VA.2: a janela e' unica; quem chega com ela ocupada espera. */
+static BOOLEAN Bc250CompVaLock(void)
+{
+    BOOLEAN waited = FALSE;
+    if (InterlockedCompareExchange(&g_Bc250CompVaMutexState, 1, 0) == 0) {
+        KeInitializeGuardedMutex(&g_Bc250CompVaMutex);
+        InterlockedExchange(&g_Bc250CompVaMutexState, 2);
+    } else {
+        while (InterlockedCompareExchange(&g_Bc250CompVaMutexState, 2, 2) != 2) {
+            YieldProcessor();
+        }
+    }
+    if (!KeTryToAcquireGuardedMutex(&g_Bc250CompVaMutex)) {
+        waited = TRUE;
+        KeAcquireGuardedMutex(&g_Bc250CompVaMutex);
+    }
+    return waited;
+}
+
+static VOID Bc250CompVaUnlock(void)
+{
+    KeReleaseGuardedMutex(&g_Bc250CompVaMutex);
+}
+
+/* Tabela folha (nivel 0) que cobre GpuVa; mesma caminhada do walker quieto. */
+static BOOLEAN Bc250ActiveWalkLeafTable(
+    _In_ uint64_t GpuVa,
+    _In_ uint64_t RootMcAddress,
+    _In_ uint64_t VramMcBase,
+    _Out_ uint64_t *LeafTableMc)
+{
+    uint64_t tableMc = RootMcAddress;
+    uint32_t level;
+
+    *LeafTableMc = 0ull;
+    if (GpuVa >= BC250_GPUVA_TRANSLATABLE_LIMIT) return FALSE;
+    for (level = BC250_GPUVA_PT_LEVEL_COUNT - 1u; level > 0u; --level) {
+        const uint64_t index = (GpuVa >> BC250_GPUVA_PT_LEVEL_SHIFT(level)) &
+            ((1ull << BC250_GPUVA_PT_LEVEL_INDEX_BITS(level)) - 1ull);
+        uint64_t entryVramOffset = 0ull;
+        uint64_t pde = 0ull;
+        uint64_t nextMc = 0ull;
+        uint32_t pdeFlags = 0u;
+        uint32_t pdeReserved = 0u;
+        if (!Bc250ActiveMcToVramOffset(tableMc + index * BC250_ACTIVE_PT_ENTRY_BYTES,
+                VramMcBase, &entryVramOffset) ||
+            !Bc250ActiveReadVramU64(entryVramOffset, &pde)) {
+            return FALSE;
+        }
+        (void)Bc250GcvmDecodePde(pde, &nextMc, &pdeFlags, &pdeReserved);
+        if ((pdeFlags & BC250_PTE_VALID) == 0u || pdeReserved != 0u) {
+            return FALSE;
+        }
+        tableMc = nextMc;
+    }
+    *LeafTableMc = tableMc;
+    return TRUE;
+}
+
+/* PTE de uma pagina, ja limpa para a GART, com VALID e a permissao exigida. */
+static BOOLEAN Bc250ActiveCompVaReadPte(
+    _In_ uint64_t PageVa,
+    _In_ uint64_t RootMc,
+    _In_ uint64_t VramMcBase,
+    _In_ uint32_t RequiredPermission,
+    _Inout_ uint64_t *LeafKey,
+    _Inout_ uint64_t *LeafMc,
+    _Out_ uint64_t *GartPte,
+    _Out_ uint32_t *IsSystem)
+{
+    const uint64_t key = PageVa >> BC250_GPUVA_PT_LEVEL_SHIFT(1u);
+    const uint64_t leafIndex = (PageVa >> BC250_GPUVA_PT_LEVEL_SHIFT(0u)) &
+        ((1ull << BC250_GPUVA_PT_LEVEL_INDEX_BITS(0u)) - 1ull);
+    uint64_t entryVramOffset = 0ull;
+    uint64_t pte = 0ull;
+    uint64_t pageMc = 0ull;
+    uint32_t flags = 0u;
+
+    *GartPte = 0ull;
+    *IsSystem = 0u;
+    if (key != *LeafKey) {
+        if (!Bc250ActiveWalkLeafTable(PageVa, RootMc, VramMcBase, LeafMc)) {
+            return FALSE;
+        }
+        *LeafKey = key;
+    }
+    if (!Bc250ActiveMcToVramOffset(*LeafMc + leafIndex * BC250_ACTIVE_PT_ENTRY_BYTES,
+            VramMcBase, &entryVramOffset) ||
+        !Bc250ActiveReadVramU64(entryVramOffset, &pte)) {
+        return FALSE;
+    }
+    (void)Bc250GcvmDecodePte(pte, &pageMc, &flags);
+    if ((flags & BC250_PTE_VALID) == 0u ||
+        (flags & RequiredPermission) != RequiredPermission) {
+        return FALSE;
+    }
+    *IsSystem = ((flags & BC250_PTE_SYSTEM) != 0u) ? 1u : 0u;
+    *GartPte = pte & BC250_COMPVA_PTE_KEEP_MASK;
+    return TRUE;
+}
+
+/*
+ * Raiz da tabela do processo dono do escape (hContext, senao hDevice), pela
+ * mesma regra do DX.93: so' raiz no segmento 1.
+ */
+static BOOLEAN Bc250ActiveEscapeOwnerRoot(
+    _In_ BC250_DXGK_ACTIVE_CONTEXT *Active,
+    _In_ CONST DXGKARG_ESCAPE *pEscape,
+    _Out_ uint64_t *RootMc,
+    _Out_ uint64_t *VramMcBase,
+    _Out_ BC250_MCDM_HANDLE *Owner)
+{
+    BC250_MCDM_OBJECT_RECORD record;
+    BC250_MCDM_OBJECT_RECORD ownerRecord;
+    BC250_MCDM_OBJECT_STATUS status;
+    BC250_MCDM_HANDLE handle;
+    BC250_MCDM_HANDLE owner = NULL;
+    BC250_MCDM_RUNTIME_CAPS caps;
+    uint64_t mcBase;
+
+    *RootMc = 0ull;
+    *VramMcBase = 0ull;
+    *Owner = NULL;
+    handle = (BC250_MCDM_HANDLE)((pEscape->hContext != NULL) ?
+        pEscape->hContext : pEscape->hDevice);
+    if (Active == NULL || handle == NULL) return FALSE;
+
+    RtlZeroMemory(&record, sizeof(record));
+    RtlZeroMemory(&ownerRecord, sizeof(ownerRecord));
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&Active->ObjectLock);
+    status = Bc250McdmObjectLookup(&Active->Objects, handle,
+        BC250_MCDM_OBJECT_NONE, NULL, &record);
+    if (status == BC250_MCDM_OBJECT_OK) {
+        owner = (record.Type == (uint32_t)BC250_MCDM_OBJECT_PROCESS) ?
+            handle : record.OwnerProcess;
+        if (owner != NULL) {
+            status = Bc250McdmObjectLookup(&Active->Objects, owner,
+                BC250_MCDM_OBJECT_PROCESS, NULL, &ownerRecord);
+        }
+    }
+    ExReleasePushLockShared(&Active->ObjectLock);
+    KeLeaveCriticalRegion();
+
+    if (status != BC250_MCDM_OBJECT_OK || owner == NULL ||
+        ownerRecord.RootPageTableSetCount == 0u ||
+        ownerRecord.RootPageTableSegmentId != 1u ||
+        !NT_SUCCESS(Bc250ActiveQueryRuntimeCaps(Active, &caps))) {
+        return FALSE;
+    }
+    mcBase = (caps.VramMcBase != 0ull) ? caps.VramMcBase : BC250_GCVM_VRAM_MC_BASE_FALLBACK;
+    *RootMc = mcBase + caps.LocalSegmentBaseOffset + ownerRecord.RootPageTableAddress;
+    *VramMcBase = mcBase;
+    *Owner = owner;
+    return TRUE;
+}
+
+static VOID Bc250ActiveCompVaUnmapWindow(
+    _In_ volatile uint64_t *Table,
+    _In_ uint32_t FirstEntry,
+    _In_ uint32_t Pages)
+{
+    uint32_t i;
+    for (i = 0u; i < Pages; ++i) {
+        Table[FirstEntry + i] = g_Bc250CompVaDummyPte;
+    }
+    KeMemoryBarrier();
+}
+
+/* Devolve um lado inteiro a dummy e esquece o mapeamento. */
+static VOID Bc250ActiveCompVaResetSide(
+    _In_ volatile uint64_t *Table,
+    _In_ uint32_t Side)
+{
+    BC250_COMPVA_SIDE *side = &g_Bc250CompVaSide[Side];
+    const uint32_t first = (Side == BC250_COMPVA_SIDE_SRC) ?
+        BC250_COMPVA_GART_SRC_FIRST : BC250_COMPVA_GART_DST_FIRST;
+    if (side->Table == Table && side->Mapped != 0u) {
+        Bc250ActiveCompVaUnmapWindow(Table, first, side->Mapped);
+    }
+    RtlZeroMemory(side, sizeof(*side));
+    side->Table = Table;
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250CompVaOwner[Side], NULL);
+}
+
+/*
+ * Garante que a janela de um lado mapeia [PageVa, PageVa + Pages*4K) da tabela
+ * do dono. Reuso (COMP.VA.3): mesma origem, geracao do dono inalterada e as
+ * PTEs da primeira, do meio e da ultima pagina iguais as da janela -> nada a
+ * reescrever. Senao, caminha e regrava; *Remapped diz se a TLB da VMID 0
+ * precisa ser invalidada antes da copia.
+ */
+static BOOLEAN Bc250ActiveCompVaPrepareSide(
+    _In_ volatile uint64_t *Table,
+    _In_ uint32_t Side,
+    _In_ uint64_t PageVa,
+    _In_ uint32_t Pages,
+    _In_ uint64_t RootMc,
+    _In_ uint64_t VramMcBase,
+    _In_ BC250_MCDM_HANDLE Owner,
+    _In_ uint32_t RequiredPermission,
+    _In_ BOOLEAN AllowReuse,
+    _Inout_ uint32_t *SystemPages,
+    _Out_ uint64_t *FailedVa,
+    _Inout_ BOOLEAN *Remapped)
+{
+    BC250_COMPVA_SIDE *side = &g_Bc250CompVaSide[Side];
+    const uint32_t first = (Side == BC250_COMPVA_SIDE_SRC) ?
+        BC250_COMPVA_GART_SRC_FIRST : BC250_COMPVA_GART_DST_FIRST;
+    uint64_t leafKey = ~0ull;
+    uint64_t leafMc = 0ull;
+    LONG generationBefore;
+    uint32_t i;
+
+    *FailedVa = 0ull;
+    if (side->Table != Table) {
+        RtlZeroMemory(side, sizeof(*side));
+        side->Table = Table;
+    }
+    generationBefore = InterlockedCompareExchange(&g_Bc250CompVaPtGeneration, 0, 0);
+
+    if (AllowReuse && side->Valid && side->PageVa == PageVa && side->Pages == Pages &&
+        side->RootMc == RootMc && g_Bc250CompVaOwner[Side] == (PVOID)Owner &&
+        side->Generation == generationBefore) {
+        const uint32_t probe[3] = { 0u, Pages / 2u, Pages - 1u };
+        uint32_t ok = 1u;
+        for (i = 0u; i < 3u && ok != 0u; ++i) {
+            uint64_t pte = 0ull;
+            uint32_t isSystem = 0u;
+            if (!Bc250ActiveCompVaReadPte(PageVa + ((uint64_t)probe[i] << 12), RootMc,
+                    VramMcBase, RequiredPermission, &leafKey, &leafMc, &pte, &isSystem) ||
+                pte != Table[first + probe[i]]) {
+                ok = 0u;
+            }
+        }
+        if (ok != 0u) {
+            *SystemPages += side->SystemPages;
+            InterlockedIncrement(&g_Bc250CompVaReused);
+            return TRUE;
+        }
+        leafKey = ~0ull;
+    }
+
+    side->Valid = FALSE;
+    if (side->Mapped > Pages) {
+        Bc250ActiveCompVaUnmapWindow(Table, first + Pages, side->Mapped - Pages);
+        side->Mapped = Pages;
+    }
+    side->SystemPages = 0u;
+    for (i = 0u; i < Pages; ++i) {
+        const uint64_t va = PageVa + ((uint64_t)i << 12);
+        uint64_t pte = 0ull;
+        uint32_t isSystem = 0u;
+        if (!Bc250ActiveCompVaReadPte(va, RootMc, VramMcBase, RequiredPermission,
+                &leafKey, &leafMc, &pte, &isSystem)) {
+            *FailedVa = va;
+            if (i > side->Mapped) side->Mapped = i;
+            *Remapped = TRUE;
+            return FALSE;
+        }
+        side->SystemPages += isSystem;
+        Table[first + i] = pte;
+    }
+    if (Pages > side->Mapped) side->Mapped = Pages;
+    *SystemPages += side->SystemPages;
+    *Remapped = TRUE;
+    InterlockedIncrement(&g_Bc250CompVaRemapped);
+    side->PageVa = PageVa;
+    side->Pages = Pages;
+    side->RootMc = RootMc;
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250CompVaOwner[Side], (PVOID)Owner);
+    side->Generation = generationBefore;
+    /* So' reutilizavel se a tabela do dono nao mudou durante a caminhada. */
+    side->Valid = (AllowReuse &&
+        InterlockedCompareExchange(&g_Bc250CompVaPtGeneration, 0, 0) == generationBefore) ?
+        TRUE : FALSE;
+    return TRUE;
+}
+
+/* Linhas que cabem numa janela a partir do deslocamento dentro da pagina. */
+static ULONG Bc250CompVaRowsThatFit(UINT64 Pitch, UINT64 RowTailBytes)
+{
+    const UINT64 windowBytes = (UINT64)BC250_COMPVA_GART_WINDOW_PAGES << 12;
+    /* pior caso: 4095 bytes de deslocamento no inicio + 4095 de arredondamento */
+    if (RowTailBytes + 8190ull > windowBytes) return 0u;
+    if (Pitch == 0ull) return 1u;
+    return (ULONG)(((windowBytes - 8190ull - RowTailBytes) / Pitch) + 1ull);
+}
+
+static NTSTATUS Bc250ActiveEscapeCompositeBltViaVa(
+    _In_ BC250_DXGK_ACTIVE_CONTEXT *Active,
+    _In_ CONST DXGKARG_ESCAPE *pEscape,
+    _Inout_ BC250_ESCAPE_COMPOSITE_BLT *Esc,
+    _In_ UINT64 SrcMcDirect,
+    _In_ UINT64 DstMcDirect,
+    _In_ UINT64 PixelBytes)
+{
+    volatile uint64_t *table;
+    uint64_t rootMc = 0ull;
+    uint64_t vramMcBase = 0ull;
+    BC250_MCDM_HANDLE owner = NULL;
+    const BOOLEAN srcWindow = (SrcMcDirect == 0ull) ? TRUE : FALSE;
+    const BOOLEAN dstWindow = (DstMcDirect == 0ull) ? TRUE : FALSE;
+    const BOOLEAN linear = (Esc->SourcePitch == Esc->DestPitch && Esc->DestX == 0u &&
+        Esc->DestY == 0u && PixelBytes == Esc->SourcePitch) ? TRUE : FALSE;
+    const UINT64 dstTail = (UINT64)Esc->DestX * 4ull + PixelBytes;
+    ULONG rowsPerChunk = 0u;
+    ULONG row = 0u;
+    ULONG chunks = 0u;
+    ULONG flushes = 0u;
+    BOOLEAN singleChunk;
+    BOOLEAN waited;
+    uint32_t systemPages = 0u;
+    uint64_t failedVa = 0ull;
+    const char *why = NULL;
+    LONG count;
+
+    table = Active->D2GartTableCpu;
+    if (InterlockedCompareExchange(&Active->D2GartProgrammed, 0, 0) != 1 || table == NULL) {
+        why = "GART da VMID 0 desligada";
+    } else if (!Bc250ActiveEscapeOwnerRoot(Active, pEscape, &rootMc, &vramMcBase, &owner)) {
+        why = "raiz do processo dono ausente ou fora do segmento 1";
+    } else {
+        rowsPerChunk = Bc250CompVaRowsThatFit(srcWindow ? Esc->SourcePitch : 0ull, PixelBytes);
+        if (dstWindow) {
+            const ULONG dstRows = Bc250CompVaRowsThatFit(Esc->DestPitch, dstTail);
+            if (dstRows < rowsPerChunk) rowsPerChunk = dstRows;
+        }
+        if (rowsPerChunk == 0u) why = "linha maior que a janela";
+    }
+    if (why != NULL) {
+        Esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+        if (Bc250CompVaShouldLog(&g_Bc250CompVaRefused, &count)) {
+            Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT VIA_VA RECUSADO #%ld: %s; SrcVa=0x%llX DstVa=0x%llX %ux%u\n",
+                count, why, (unsigned long long)Esc->SourceGpuVa,
+                (unsigned long long)Esc->DestGpuVa, Esc->Width, Esc->Height);
+        }
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    waited = Bc250CompVaLock();
+    if (waited) {
+        InterlockedIncrement(&g_Bc250CompVaWaited);
+    }
+
+    /* Primeira vez com esta tabela: a janela inteira tem de estar na dummy. */
+    if (g_Bc250CompVaDummyTable != table) {
+        const uint64_t dummy = table[BC250_COMPVA_GART_FIRST];
+        uint32_t i;
+        for (i = BC250_COMPVA_GART_FIRST; i < BC250_GCVM_GART_ENTRIES; ++i) {
+            if (table[i] != dummy) break;
+        }
+        if (i != BC250_GCVM_GART_ENTRIES || (dummy & BC250_PTE_SYSTEM) != 0u) {
+            Bc250CompVaUnlock();
+            Esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+            Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT VIA_VA RECUSADO: janela da GART em uso (entrada %u=0x%llX, dummy=0x%llX)\n",
+                i, (unsigned long long)((i < BC250_GCVM_GART_ENTRIES) ? table[i] : 0ull),
+                (unsigned long long)dummy);
+            return STATUS_INVALID_PARAMETER;
+        }
+        g_Bc250CompVaDummyPte = dummy;
+        g_Bc250CompVaDummyTable = table;
+        RtlZeroMemory(g_Bc250CompVaSide, sizeof(g_Bc250CompVaSide));
+        g_Bc250CompVaSide[0].Table = table;
+        g_Bc250CompVaSide[1].Table = table;
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT VIA_VA janela pronta: entradas %u..%u (origem) e %u..%u (destino), %u paginas por lado, dummy=0x%llX\n",
+            BC250_COMPVA_GART_SRC_FIRST, BC250_COMPVA_GART_DST_FIRST - 1u,
+            BC250_COMPVA_GART_DST_FIRST, BC250_GCVM_GART_ENTRIES - 1u,
+            BC250_COMPVA_GART_WINDOW_PAGES, (unsigned long long)g_Bc250CompVaDummyPte);
+    }
+
+    /* Tela inteira numa janela: mapeamento persistente e reutilizavel. */
+    singleChunk = (rowsPerChunk >= Esc->Height) ? TRUE : FALSE;
+    if (!singleChunk) {
+        /* Pedacos reescrevem a janela: nada fica reutilizavel. */
+        Bc250ActiveCompVaResetSide(table, BC250_COMPVA_SIDE_SRC);
+        Bc250ActiveCompVaResetSide(table, BC250_COMPVA_SIDE_DST);
+    }
+
+    while (row < Esc->Height) {
+        const ULONG rows = ((Esc->Height - row) < rowsPerChunk) ? (Esc->Height - row) : rowsPerChunk;
+        uint64_t srcAddr;
+        uint64_t dstAddr;
+        BOOLEAN remapped = FALSE;
+        BOOLEAN ok;
+
+        if (srcWindow) {
+            const uint64_t start = Esc->SourceGpuVa + (uint64_t)row * Esc->SourcePitch;
+            const uint64_t end = start + (uint64_t)(rows - 1u) * Esc->SourcePitch + PixelBytes;
+            const uint32_t pages = (uint32_t)(((end - 1ull) >> 12) - (start >> 12) + 1ull);
+            if (!Bc250ActiveCompVaPrepareSide(table, BC250_COMPVA_SIDE_SRC,
+                    start & ~0xFFFull, pages, rootMc, vramMcBase, owner,
+                    BC250_PTE_READABLE, singleChunk, &systemPages, &failedVa, &remapped)) {
+                why = "PTE da origem invalida ou sem leitura";
+                break;
+            }
+            srcAddr = ((uint64_t)BC250_COMPVA_GART_SRC_FIRST << 12) + (start & 0xFFFull);
+        } else {
+            srcAddr = SrcMcDirect + (uint64_t)row * Esc->SourcePitch;
+        }
+        if (dstWindow) {
+            const uint64_t start = Esc->DestGpuVa + (uint64_t)(Esc->DestY + row) * Esc->DestPitch;
+            const uint64_t end = start + (uint64_t)(rows - 1u) * Esc->DestPitch + dstTail;
+            const uint32_t pages = (uint32_t)(((end - 1ull) >> 12) - (start >> 12) + 1ull);
+            if (!Bc250ActiveCompVaPrepareSide(table, BC250_COMPVA_SIDE_DST,
+                    start & ~0xFFFull, pages, rootMc, vramMcBase, owner,
+                    BC250_PTE_WRITEABLE, singleChunk, &systemPages, &failedVa, &remapped)) {
+                why = "PTE do destino invalida ou sem escrita";
+                break;
+            }
+            dstAddr = ((uint64_t)BC250_COMPVA_GART_DST_FIRST << 12) + (start & 0xFFFull);
+        } else {
+            dstAddr = DstMcDirect + (uint64_t)(Esc->DestY + row) * Esc->DestPitch;
+        }
+        if (remapped) {
+            /* mb() de amdgpu_gart_map: as PTEs tem de estar na memoria antes da
+             * invalidacao que o SDMA vai executar. P1b: sem HDP. */
+            _mm_mfence();
+            (void)Bc250ActiveHdpWriteFlush(Active, "COMPOSITE_VIA_VA");
+            ++flushes;
+        }
+
+        if (linear) {
+            ok = Bc250SdmaPresentBltViaGartWindow(srcAddr, 0u, dstAddr, 0u,
+                0u, 0u, 0u, 0u, (ULONG)((UINT64)rows * Esc->SourcePitch), remapped);
+        } else {
+            ok = Bc250SdmaPresentBltViaGartWindow(srcAddr, Esc->SourcePitch,
+                dstAddr, Esc->DestPitch, Esc->DestX, 0u, Esc->Width, rows, 0u, remapped);
+        }
+        if (!ok) {
+            why = "SDMA nao concluiu o pedaco (fence/RPTR)";
+            break;
+        }
+        ++chunks;
+        row += rows;
+    }
+
+    if (why != NULL || !singleChunk) {
+        /* Falha ou pedacos: a janela volta a dummy e nada fica reutilizavel. */
+        Bc250ActiveCompVaResetSide(table, BC250_COMPVA_SIDE_SRC);
+        Bc250ActiveCompVaResetSide(table, BC250_COMPVA_SIDE_DST);
+    }
+    Bc250CompVaUnlock();
+
+    if (why != NULL) {
+        Esc->ResultCode = BC250_PRESENT_BLT_STATUS_FAILED;
+        if (Bc250CompVaShouldLog(&g_Bc250CompVaRefused, &count)) {
+            Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT VIA_VA FALHOU #%ld: %s; linha %u de %u, pedacos=%u, VA falha=0x%llX SrcVa=0x%llX DstVa=0x%llX\n",
+                count, why, row, Esc->Height, chunks, (unsigned long long)failedVa,
+                (unsigned long long)Esc->SourceGpuVa, (unsigned long long)Esc->DestGpuVa);
+        }
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    Esc->ResultCode = BC250_PRESENT_BLT_STATUS_SUCCESS;
+    if (Bc250CompVaShouldLog(&g_Bc250CompVaOk, &count)) {
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT OK VIA_VA #%ld: %ux%u srcPitch=%u dstPitch=%u DstXY=%u,%u SrcVa=0x%llX(%s) DstVa=0x%llX(%s) pedacos=%u invalidacoes=%u paginas_sistema=%u %s esperou=%u | total reuso=%ld remapeios=%ld esperas=%ld Prova=SOMENTE_ENGINE\n",
+            count, Esc->Width, Esc->Height, Esc->SourcePitch, Esc->DestPitch,
+            Esc->DestX, Esc->DestY,
+            (unsigned long long)Esc->SourceGpuVa, srcWindow ? "janela" : "MC",
+            (unsigned long long)Esc->DestGpuVa, dstWindow ? "janela" : "MC",
+            chunks, flushes, systemPages, linear ? "LINEAR" : "RECT",
+            waited ? 1u : 0u,
+            InterlockedCompareExchange(&g_Bc250CompVaReused, 0, 0),
+            InterlockedCompareExchange(&g_Bc250CompVaRemapped, 0, 0),
+            InterlockedCompareExchange(&g_Bc250CompVaWaited, 0, 0));
+    }
+    return STATUS_SUCCESS;
+}
+
+/*
  * COMPOSITE_BLT -- composicao do DWM executada pelo caminho de blt do KMD.
  *
  * Medicao de 13/09 08:12 que motiva este caminho: 953 buffers de paginacao
@@ -18768,16 +20025,30 @@ static NTSTATUS Bc250ActiveEscapeCompositeBlt(
         return STATUS_DEVICE_NOT_READY;
     }
 
-    if (!Bc250ActiveEscapeResolveGpuVaToMc(hAdapter, pEscape, esc->SourceGpuVa,
-            (UINT32)srcSpan, &srcMc) ||
-        !Bc250ActiveEscapeResolveGpuVaToMc(hAdapter, pEscape, esc->DestGpuVa,
-            (UINT32)dstSpan, &dstMc)) {
-        esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
-        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT RECUSADO (resolucao): SrcVa=0x%llX->0x%llX DstVa=0x%llX->0x%llX Bytes=%u\n",
-            (unsigned long long)esc->SourceGpuVa, (unsigned long long)srcMc,
-            (unsigned long long)esc->DestGpuVa, (unsigned long long)dstMc,
-            (unsigned)srcSpan);
-        return STATUS_INVALID_PARAMETER;
+    {
+        /*
+         * COMP.VA (doc 743): as duas resolucoes rodam sempre (antes o || parava
+         * na primeira e o log mostrava Dst=0x0 sem ter tentado). Se uma falhar,
+         * a pagina nao esta na VRAM: copia pelo VA do processo dono, pela janela
+         * da GART. O lado que resolveu por MC continua por MC.
+         */
+        const BOOLEAN srcByMc = Bc250ActiveEscapeResolveGpuVaToMc(hAdapter, pEscape,
+            esc->SourceGpuVa, (UINT32)srcSpan, &srcMc);
+        const BOOLEAN dstByMc = Bc250ActiveEscapeResolveGpuVaToMc(hAdapter, pEscape,
+            esc->DestGpuVa, (UINT32)dstSpan, &dstMc);
+        if (!srcByMc || !dstByMc) {
+            static volatile LONG s_compositeMcMiss = 0;
+            const LONG miss = InterlockedIncrement(&s_compositeMcMiss);
+            if (miss <= 16 || (miss % 256) == 0) {
+                Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT resolucao por MC falhou #%ld: SrcVa=0x%llX->%s DstVa=0x%llX->%s Bytes=%u -> VIA_VA\n",
+                    miss, (unsigned long long)esc->SourceGpuVa, srcByMc ? "MC" : "fora da VRAM",
+                    (unsigned long long)esc->DestGpuVa, dstByMc ? "MC" : "fora da VRAM",
+                    (unsigned)srcSpan);
+            }
+            return Bc250ActiveEscapeCompositeBltViaVa(
+                (BC250_DXGK_ACTIVE_CONTEXT *)hAdapter, pEscape, esc,
+                srcByMc ? srcMc : 0ull, dstByMc ? dstMc : 0ull, pixelBytes);
+        }
     }
 
     /* Faixas inteiras de backing nao podem se sobrepor. */
@@ -19456,6 +20727,7 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
         InterlockedExchange(&g_Bc250SmnIndexLockReady, 1);
     }
     Bc250McdmInstallPlatformProbe(Bc250ActivePlatformProbe);
+    Bc250McdmInstallSmuClockProbe(Bc250ActiveSmuClockProbe);
     Bc250McdmInstallSdma0Probe(Bc250ActiveSdma0Probe);
     Bc250McdmInstallSdma1RangeSource(Bc250ActiveSdma1RangeSource);
     Bc250McdmInstallMecPollSources(Bc250SubmissionMecPollCalls,
@@ -20356,6 +21628,10 @@ static VOID Bc250ActiveCpEopIrqArm(BC250_DXGK_ACTIVE_CONTEXT *Context)
     wanted = (before & ~BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE) |
         (BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE &
          BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE);
+    if (BC250_C06_CP_ERRO_IRQ) {
+        wanted = (wanted & ~BC250_CP_INT_CNTL_RING0_C06_ERRO_MASK) |
+            (BC250_CP_INT_CNTL_RING0_C06_ERRO_MASK & BC250_CP_INT_CNTL_RING0_C06_ERRO_MASK);
+    }
     if (Bc250MmioTopologyWrite32(&Context->Core.MmioTransport,
             BC250_REG_CP_INT_CNTL_RING0, wanted) == 0u ||
         Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
@@ -20369,8 +21645,8 @@ static VOID Bc250ActiveCpEopIrqArm(BC250_DXGK_ACTIVE_CONTEXT *Context)
     }
     Context->CpEopIntCntlBefore = before;
     InterlockedExchange(&Context->CpEopIrqArmed, 1);
-    Bc250DisplayLog("[CP_EOP] ARMADO: CP_INT_CNTL_RING0 0x%08X -> 0x%08X (TIME_STAMP_INT_ENABLE); RELEASE_MEM do GFX com INT_SEL=2\n",
-        before, after);
+    Bc250DisplayLog("[CP_EOP] ARMADO: CP_INT_CNTL_RING0 0x%08X -> 0x%08X (TIME_STAMP_INT_ENABLE%s); RELEASE_MEM do GFX com INT_SEL=2\n",
+        before, after, BC250_C06_CP_ERRO_IRQ ? " + C06 PRIV_INSTR/PRIV_REG/OPCODE_ERROR, como o amdgpu" : "");
 #else
     UNREFERENCED_PARAMETER(Context);
 #endif
@@ -20661,6 +21937,107 @@ static VOID Bc250ActiveGfxRst1SoftReset(BC250_DXGK_ACTIVE_CONTEXT *Context)
 }
 
 /*
+ * C05 (doc 764): amdgpu_ring_soft_recovery para o anel grafico. A VMID e' a do
+ * ultimo IB de usuario (GfxEngine.LastSubmitVmid); sem IB de usuario conhecido
+ * (0xFFFFFFFF ou 0), mata as ondas de todas as VMIDs (CHECK_VMID=0): no TDR o
+ * GFX inteiro vai ser reiniciado de qualquer jeito. A cada 100 us reescreve o
+ * SQ_CMD e le o GRBM_STATUS; para quando nada do pipeline nem do CP esta
+ * ocupado, ou em 10 ms (o deadline do amdgpu). Exige broadcast no
+ * GRBM_GFX_INDEX (o quiesce repoe antes).
+ */
+static VOID Bc250ActiveC05WaveKill(BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    BC250_MMIO_TOPOLOGY_CONTEXT *t;
+    uint32_t vmid, cmd, grbmBefore = 0u, grbm = 0u, i, writes = 0u, idleAt = 0u;
+    BOOLEAN perVmid;
+    if (Context == NULL) return;
+    t = &Context->Core.MmioTransport;
+    vmid = Context->GfxEngine.LastSubmitVmid;
+    perVmid = (vmid >= 1u && vmid <= 15u) ? TRUE : FALSE;
+    cmd = BC250_SQ_CMD_KILL_BROADCAST;
+    if (perVmid) cmd |= BC250_SQ_CMD_CHECK_VMID | (vmid << BC250_SQ_CMD_VM_ID_SHIFT);
+    (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_GRBM_STATUS, &grbmBefore);
+    for (i = 0u; i < 100u; ++i) {
+        writes += Bc250MmioTopologyWrite32(t, BC250_GFX_REG_SQ_CMD, cmd);
+        KeStallExecutionProcessor(100u);
+        if (Bc250MmioTopologyRead32(t, BC250_GFX_REG_GRBM_STATUS, &grbm) != 0u &&
+            (grbm & (BC250_GRBM_STATUS_GFX_PIPE_BUSY | BC250_GRBM_STATUS_CP_BUSY_ANY)) == 0u) {
+            idleAt = i + 1u;
+            break;
+        }
+    }
+    InterlockedIncrement(&Context->C05WaveKills);
+    if (idleAt != 0u) InterlockedIncrement(&Context->C05WaveKillIdle);
+    Bc250DisplayLog("[C05_WAVEKILL] #%ld SQ_CMD=0x%08X (%s VMID %u) escritas=%u GRBM_STATUS 0x%08X -> 0x%08X: %s\n",
+        Context->C05WaveKills, cmd, perVmid ? "so' a" : "todas as ondas; ultima", vmid, writes,
+        grbmBefore, grbm,
+        idleAt != 0u ? "GFX ocioso -- soft recovery como o amdgpu" : "GFX ainda ocupado em 10 ms -- segue o soft-reset");
+#else
+    UNREFERENCED_PARAMETER(Context);
+#endif
+}
+
+/*
+ * GFXRST.2 (doc 759): etapas extras da escada do restart do GFX, quando o
+ * reset do quiesce (GFXRST.1) nao trouxe o CP_RB0 de volta.
+ *   Etapa 1 -- gfx_v10_0_soft_reset com o RLC no reset: rlc_stop, halt do CP
+ *              grafico e do MEC, CP|GFX|CPF|CPG|RLC. O restart depois faz o
+ *              rlc_resume (GfxRst1PostReset) e reprograma o RLC_CSIB.
+ *   Etapa 2 -- o regime das 212 provas ate a Corrida 240: RLC parado (RLC.1
+ *              desarmada, CG/PG/SPM devolvidos) e CP|GFX|CPF|CPG, sem RLC.
+ * Broadcast reposto antes do pulso, como no quiesce.
+ */
+static VOID Bc250ActiveGfxRst2Escalate(BC250_DXGK_ACTIVE_CONTEXT *Context, uint32_t Stage)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    BC250_MMIO_TOPOLOGY_CONTEXT *t;
+    uint32_t me = 0u, mec = 0u, rlc = 0u, tmp = 0u, rb1 = 0u, rb2 = 0u, mask;
+
+    if (Context == NULL) return;
+    t = &Context->Core.MmioTransport;
+    mask = BC250_GRBM_SOFT_RESET_CP_MASK | BC250_GRBM_SOFT_RESET_GFX_MASK |
+           BC250_GRBM_SOFT_RESET_CPF_MASK | BC250_GRBM_SOFT_RESET_CPG_MASK;
+    if (Stage == 1u) {
+        mask |= BC250_GRBM_SOFT_RESET_RLC_MASK;
+        (void)Bc250MmioTopologyRead32(t, BC250_REG_RLC_CNTL, &rlc);
+        (void)Bc250MmioTopologyWrite32(t, BC250_REG_RLC_CNTL, rlc & ~BC250_RLC_CNTL_ENABLE_F32_MASK);
+    } else {
+        Bc250ActiveRlc1Disarm(Context, "GFXRST2 etapa 2 (regime ate a Corrida 240)");
+    }
+    (void)Bc250MmioTopologyWrite32(t, BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
+    (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_ME_CNTL, &me);
+    (void)Bc250MmioTopologyWrite32(t, BC250_GFX_REG_CP_ME_CNTL,
+        me | BC250_CP_ME_CNTL_ME_HALT | BC250_CP_ME_CNTL_PFP_HALT | BC250_CP_ME_CNTL_CE_HALT);
+    (void)Bc250MmioTopologyRead32(t, BC250_GFX_REG_CP_MEC_CNTL, &mec);
+    if (InterlockedCompareExchange(&Context->GfxRst1MecHalted, 1, 0) == 0) {
+        /* O restart devolve o CP_MEC_CNTL de antes do primeiro halt. */
+        Context->GfxRst1MecCntlBefore = mec;
+    }
+    (void)Bc250MmioTopologyWrite32(t, BC250_GFX_REG_CP_MEC_CNTL,
+        BC250_CP_MEC_CNTL_ME1_HALT | BC250_CP_MEC_CNTL_ME2_HALT);
+    (void)Bc250MmioTopologyWrite32(t, BC250_GFX_REG_GRBM_GFX_INDEX, BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
+    KeStallExecutionProcessor(50u);
+    (void)Bc250MmioTopologyRead32(t, BC250_GRBM_REG_SOFT_RESET, &tmp);
+    tmp |= mask;
+    (void)Bc250MmioTopologyWrite32(t, BC250_GRBM_REG_SOFT_RESET, tmp);
+    (void)Bc250MmioTopologyRead32(t, BC250_GRBM_REG_SOFT_RESET, &rb1);
+    KeStallExecutionProcessor(50u);
+    tmp &= ~mask;
+    (void)Bc250MmioTopologyWrite32(t, BC250_GRBM_REG_SOFT_RESET, tmp);
+    (void)Bc250MmioTopologyRead32(t, BC250_GRBM_REG_SOFT_RESET, &rb2);
+    KeStallExecutionProcessor(50u);
+    Bc250DisplayLog("[GFXRST2] etapa %u: %s, mascara=0x%08X GRBM_SOFT_RESET lido 0x%08X (aplicado) / 0x%08X (limpo), CP_ME_CNTL 0x%08X -> halt, CP_MEC_CNTL 0x%08X -> halt\n",
+        Stage, Stage == 1u ? "amdgpu com o RLC no reset (rlc_resume e RLC_CSIB a seguir)" :
+                             "RLC parado, CP|GFX|CPF|CPG (regime das 212 provas ate a 240)",
+        mask, rb1, rb2, me, mec);
+#else
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Stage);
+#endif
+}
+
+/*
  * GFXRST.1, depois do reset e antes de rearmar o CP_RB0 (no lugar do hw_init
  * do amdgpu): rlc_resume se a RLC.1 armou no boot, e o CP_MEC_CNTL de antes
  * (cp_compute_enable(true) escreve 0; aqui volta o valor lido antes do halt).
@@ -20835,6 +22212,151 @@ static VOID Bc250ActiveG1RestoreGolden(BC250_DXGK_ACTIVE_CONTEXT *Context, const
 #endif
 }
 
+/*
+ * C01 (doc 764), Lei 5: o estado de init do amdgpu que faltava
+ * (bc250_c01_init_parity.h). Roda logo depois da G.1, antes do PSP, do SDMA0 e
+ * do CP: ninguem mais usa o GRBM_GFX_CNTL nesse ponto. Por registrador:
+ * snapshot, escrita, readback; o que nao conferir volta ao original. As
+ * VMIDs sao selecionadas por GRBM_GFX_CNTL.VMID (nv_grbm_select) e o seletor
+ * volta a 0 no fim. Mapeia o transporte se estiver vazio e o devolve.
+ */
+static VOID Bc250ActiveC01ApplyInitParity(BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    BC250_MMIO_TOPOLOGY_CONTEXT *t;
+    BC250_C01_PLAIN_ENTRY plain[BC250_C01_PLAIN_COUNT];
+    uint32_t n, i, v, okPlain = 0u, samePlain = 0u, badPlain = 0u, okVmid = 0u, badVmid = 0u;
+    uint32_t sel = 0u;
+    BOOLEAN mappedHere = FALSE;
+
+    if (Context == NULL) return;
+    if (!BC250_C01_INIT_PARITY) {
+        Bc250DisplayLog("[C01_INIT] NAO ARMADO: chave=0 -- SH_MEM/quantum/engines ficam os do POST\n");
+        return;
+    }
+    t = &Context->Core.MmioTransport;
+    if (t->State == BC250_MMIO_TOPOLOGY_EMPTY) {
+        BC250_MMIO_TOPOLOGY_STATUS ms = Bc250MmioTopologyMapReadonly(
+            t, &Context->Core.DxgkInterface, Context->Core.ResolvedBars,
+            Context->Core.ResolvedBarCount, BC250_PCI_MMIO_BAR_INDEX);
+        if (ms != BC250_MMIO_TOPOLOGY_OK) {
+            Bc250DisplayLog("[C01_INIT] NAO TENTADO: mapeamento MMIO falhou (%s)\n",
+                Bc250MmioTopologyStatusName(ms));
+            return;
+        }
+        mappedHere = TRUE;
+    } else if (t->State != BC250_MMIO_TOPOLOGY_MAPPED) {
+        Bc250DisplayLog("[C01_INIT] NAO TENTADO: transporte em estado %u\n", (uint32_t)t->State);
+        return;
+    }
+    Context->C01ShMemDone = 0u;
+    RtlZeroMemory(Context->C01PlainDone, sizeof(Context->C01PlainDone));
+
+    /* 1. SH_MEM por VMID (gfx_v10_0_constants_init + init_compute_vmid). */
+    (void)Bc250MmioTopologyRead32(t, BC250_C01_REG_GRBM_GFX_CNTL, &sel);
+    for (v = 0u; v < BC250_C01_VMID_COUNT; ++v) {
+        uint32_t cfg = 0u, bases = 0u, cfg2 = 0u, bases2 = 0u, wantBases;
+        BOOLEAN ok;
+        if (Bc250MmioTopologyWrite32(t, BC250_C01_REG_GRBM_GFX_CNTL, v << BC250_C01_GRBM_GFX_CNTL_VMID_SHIFT) == 0u ||
+            Bc250MmioTopologyRead32(t, BC250_C01_REG_SH_MEM_CONFIG, &cfg) == 0u ||
+            Bc250MmioTopologyRead32(t, BC250_C01_REG_SH_MEM_BASES, &bases) == 0u) {
+            ++badVmid;
+            continue;
+        }
+        Context->C01OrigShMemConfig[v] = cfg;
+        Context->C01OrigShMemBases[v] = bases;
+        wantBases = (v == 0u) ? bases : Bc250C01ShMemBasesFor(v);
+        (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_SH_MEM_CONFIG, BC250_C01_SH_MEM_CONFIG_VALUE);
+        if (v != 0u) (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_SH_MEM_BASES, wantBases);
+        (void)Bc250MmioTopologyRead32(t, BC250_C01_REG_SH_MEM_CONFIG, &cfg2);
+        (void)Bc250MmioTopologyRead32(t, BC250_C01_REG_SH_MEM_BASES, &bases2);
+        ok = (cfg2 == BC250_C01_SH_MEM_CONFIG_VALUE && bases2 == wantBases) ? TRUE : FALSE;
+        if (ok) {
+            Context->C01ShMemDone |= (1u << v);
+            ++okVmid;
+        } else {
+            (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_SH_MEM_CONFIG, cfg);
+            if (v != 0u) (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_SH_MEM_BASES, bases);
+            ++badVmid;
+        }
+        if (v == 0u || v == 1u || v == 8u || !ok) {
+            Bc250DisplayLog("[C01_INIT] VMID %2u SH_MEM_CONFIG 0x%08X -> 0x%08X SH_MEM_BASES 0x%08X -> 0x%08X%s\n",
+                v, cfg, cfg2, bases, bases2, ok ? "" : " -- DIVERGE, restaurado");
+        }
+    }
+    (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_GRBM_GFX_CNTL, 0u);
+
+    /* 2-3. Quantum do SDMA e faixas dos engines 2..16 (GDS fica: ver o .h). */
+    n = Bc250C01BuildPlain(plain, BC250_C01_PLAIN_COUNT);
+    for (i = 0u; i < n; ++i) {
+        uint32_t orig = 0u, after = 0u;
+        if (Bc250MmioTopologyRead32(t, plain[i].BarOffset, &orig) == 0u) {
+            ++badPlain;
+            continue;
+        }
+        Context->C01OrigPlain[i] = orig;
+        if (orig == plain[i].Value) {
+            ++samePlain;
+            continue;
+        }
+        if (Bc250MmioTopologyWrite32(t, plain[i].BarOffset, plain[i].Value) != 0u &&
+            Bc250MmioTopologyRead32(t, plain[i].BarOffset, &after) != 0u &&
+            after == plain[i].Value) {
+            Context->C01PlainDone[i] = 1u;
+            ++okPlain;
+        } else {
+            (void)Bc250MmioTopologyWrite32(t, plain[i].BarOffset, orig);
+            ++badPlain;
+            Bc250DisplayLog("[C01_INIT] off=0x%05X DIVERGE: pedido 0x%08X lido 0x%08X -- restaurado 0x%08X\n",
+                plain[i].BarOffset, plain[i].Value, after, orig);
+        }
+    }
+    if (Context->C01ShMemDone != 0u || okPlain != 0u) InterlockedExchange(&Context->C01Armed, 1);
+    Bc250DisplayLog("[C01_INIT] RESUMO: GRBM_GFX_CNTL era 0x%08X (volta a 0); SH_MEM %u/16 VMIDs (mascara 0x%04X, %u divergentes); "
+        "quantum/engines %u escritos, %u ja' iguais, %u divergentes de %u -> %s\n",
+        sel, okVmid, Context->C01ShMemDone, badVmid, okPlain, samePlain, badPlain, n,
+        Context->C01Armed ? "ARMADO" : "NADA APLICADO");
+    if (mappedHere) (void)Bc250MmioTopologyUnmap(t);
+#else
+    UNREFERENCED_PARAMETER(Context);
+#endif
+}
+
+/* Idempotente. Devolve o POST na ordem inversa. */
+static VOID Bc250ActiveC01RestoreInitParity(BC250_DXGK_ACTIVE_CONTEXT *Context, const char *Why)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    BC250_MMIO_TOPOLOGY_CONTEXT *t;
+    BC250_C01_PLAIN_ENTRY plain[BC250_C01_PLAIN_COUNT];
+    uint32_t n, i, v, restored = 0u;
+    if (Context == NULL || InterlockedExchange(&Context->C01Armed, 0) != 1) return;
+    t = &Context->Core.MmioTransport;
+    if (t->State != BC250_MMIO_TOPOLOGY_MAPPED) {
+        Bc250DisplayLog("[C01_INIT] DESARME (%s): NAO FEITO -- transporte nao mapeado\n", Why);
+        return;
+    }
+    n = Bc250C01BuildPlain(plain, BC250_C01_PLAIN_COUNT);
+    for (i = n; i-- > 0u; ) {
+        if (Context->C01PlainDone[i] == 0u) continue;
+        if (Bc250MmioTopologyWrite32(t, plain[i].BarOffset, Context->C01OrigPlain[i]) != 0u) ++restored;
+        Context->C01PlainDone[i] = 0u;
+    }
+    for (v = BC250_C01_VMID_COUNT; v-- > 0u; ) {
+        if ((Context->C01ShMemDone & (1u << v)) == 0u) continue;
+        (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_GRBM_GFX_CNTL, v << BC250_C01_GRBM_GFX_CNTL_VMID_SHIFT);
+        (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_SH_MEM_CONFIG, Context->C01OrigShMemConfig[v]);
+        if (v != 0u) (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_SH_MEM_BASES, Context->C01OrigShMemBases[v]);
+        ++restored;
+    }
+    (void)Bc250MmioTopologyWrite32(t, BC250_C01_REG_GRBM_GFX_CNTL, 0u);
+    Context->C01ShMemDone = 0u;
+    Bc250DisplayLog("[C01_INIT] DESARMADO (%s): %u itens devolvidos ao POST\n", Why, restored);
+#else
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Why);
+#endif
+}
+
 /* Idempotente. Volta o bit ao valor do snapshot antes de o IH sair. */
 static VOID Bc250ActiveCpEopIrqDisarm(BC250_DXGK_ACTIVE_CONTEXT *Context, const char *Why)
 {
@@ -20848,8 +22370,9 @@ static VOID Bc250ActiveCpEopIrqDisarm(BC250_DXGK_ACTIVE_CONTEXT *Context, const 
         Bc250DisplayLog("[CP_EOP] DESARME (%s): leitura falhou; bit fica como esta\n", Why);
         return;
     }
-    restored = (cur & ~BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE) |
-        (Context->CpEopIntCntlBefore & BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE);
+    restored = (cur & ~(BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE | BC250_CP_INT_CNTL_RING0_C06_ERRO_MASK)) |
+        (Context->CpEopIntCntlBefore &
+         (BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE | BC250_CP_INT_CNTL_RING0_C06_ERRO_MASK));
     (void)Bc250MmioTopologyWrite32(&Context->Core.MmioTransport,
         BC250_REG_CP_INT_CNTL_RING0, restored);
     (void)Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
@@ -21193,6 +22716,9 @@ static VOID Bc250ActiveD2GartDisable(
 
     BOOLEAN transportMappedHere = FALSE;
 
+    /* C08: a thread do governador usa o transporte; sai antes de qualquer teardown. */
+    if (Active != NULL && KeGetCurrentIrql() == PASSIVE_LEVEL) Bc250ActiveDpm1Stop(Active, Why);
+
     if (Active == NULL ||
         InterlockedCompareExchange(&Active->D2GartProgrammed, 0, 1) != 1) {
         return;
@@ -21222,6 +22748,7 @@ static VOID Bc250ActiveD2GartDisable(
     /* RLC.1: idempotente; cobre o teardown que nao passa pelo StopDevice. */
     Bc250ActiveRlc1Disarm(Active, Why);
     /* G.1 (doc 645): SDMA0/SDMA1/IH ja' parados; os goldens voltam ao firmware. */
+    Bc250ActiveC01RestoreInitParity(Active, Why);
     Bc250ActiveG1RestoreGolden(Active, Why);
     /* P3.0b: o MMHUB le a mesma tabela; volta ao firmware antes do GFXHUB. */
     Bc250ActiveMmhubGartDisable(Active, Why);
@@ -21434,6 +22961,43 @@ static VOID Bc250ActiveArmVramCpuViaDram(_In_ BC250_DXGK_ACTIVE_CONTEXT *Context
 }
 #endif
 
+/*
+ * COMP.VA.3c (doc 747): a tabela da GART foi reservada no alocador da MMU
+ * global, antes de o alocador do bootstrap existir. Os dois alocadores nao se
+ * conferem entre si, entao a mesma faixa e' reservada tambem no do bootstrap
+ * assim que ele nasce (segundo preflight), antes do TMR e das alocacoes
+ * TOP_DOWN dele. Falha do espelho e' logada alto: a faixa poderia ser
+ * entregue a outro dono.
+ */
+static VOID Bc250ActiveD2GartMirrorReservation(BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    BC250_VRAM_ALLOCATOR *boot;
+    BC250_VRAM_STATUS st;
+    if (Context == NULL || !Context->D2GartTableReserved || Context->D2GartTableMirrored) {
+        return;
+    }
+    boot = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+    if (boot->TotalBytes == 0ull) {
+        Bc250DisplayLog("[D2_GART] ESPELHO ADIADO: alocador do bootstrap ainda sem tamanho (tabela em 0x%llX)\n",
+            (unsigned long long)Context->D2GartTableOffset);
+        return;
+    }
+    st = Bc250VramReserveFixed(boot, Context->D2GartTableOffset,
+        BC250_D2_GART_TABLE_BYTES, 65536ull, BC250_VRAM_ROLE_GART,
+        BC250_VRAM_ALLOC_CPU_VISIBLE, &Context->D2GartTableMirrorToken);
+    if (st == BC250_VRAM_OK) {
+        Context->D2GartTableMirrored = TRUE;
+        Bc250DisplayLog("[D2_GART] ESPELHO OK: tabela [0x%llX,+0x%llX) reservada tambem no alocador do bootstrap (total=0x%llX)\n",
+            (unsigned long long)Context->D2GartTableOffset,
+            (unsigned long long)BC250_D2_GART_TABLE_BYTES,
+            (unsigned long long)boot->TotalBytes);
+    } else {
+        Bc250DisplayLog("[D2_GART] ESPELHO FALHOU: status=%u na faixa [0x%llX,+0x%llX) do alocador do bootstrap -- RISCO de outro dono na tabela da GART\n",
+            (uint32_t)st, (unsigned long long)Context->D2GartTableOffset,
+            (unsigned long long)BC250_D2_GART_TABLE_BYTES);
+    }
+}
+
 static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
     BC250_GCVM_GLOBAL_MMU_INTERFACE io;
@@ -21467,7 +23031,7 @@ static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context)
         Context->SdmaBootTripodValidated != 1u || topologyBase == 0ull ||
         Context->Core.MmioTransport.State != BC250_MMIO_TOPOLOGY_MAPPED ||
         vramBar == NULL ||
-        vramBar->Length < BC250_D2_GART_TABLE_VRAM_OFFSET + 0x1000ull ||
+        vramBar->Length < BC250_D2_GART_TABLE_SCAN_FLOOR + BC250_D2_GART_TABLE_BYTES ||
         !g_Bc250SdmaPresent.HardwareEnabled ||
         InterlockedCompareExchange(&Context->D2GartProgrammed, 0, 0) != 0) {
         Bc250DisplayLog("[D2_GART] NAO TENTADO: Mmu=%u Dummy=%u Agp=%u BootTripod=%u Base=0x%llX Mmio=%u BarVram=%p SdmaHw=%u Ja=%ld -- anel segue na VRAM\n",
@@ -21482,8 +23046,68 @@ static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context)
             InterlockedCompareExchange(&Context->D2GartProgrammed, 0, 0));
         return STATUS_DEVICE_NOT_READY;
     }
+    /*
+     * COMP.VA.3 (doc 745): a tabela de 64 KB tem reserva propria no alocador,
+     * para nenhuma alocacao TOP_DOWN cair em cima dela. Offset preferido livre
+     * no mapa da 291; se ocupado, o alocador escolhe. Sem reserva, sem GART.
+     */
+    if (!Context->D2GartTableReserved) {
+        /*
+         * COMP.VA.3c (doc 747): a Corrida 292b provou (status=3 OUT_OF_RANGE nas
+         * 320 tentativas, D2 na linha 87 do log e segundo preflight na 149) que
+         * o alocador do bootstrap ainda NAO EXISTE quando a D2 roda: TotalBytes=0.
+         * O diagnostico do doc 746 ("topo cheio") estava errado. A reserva vai
+         * para o alocador da MMU global, que ja' existe (scanout + dummy), e e'
+         * espelhada no alocador do bootstrap logo depois do segundo preflight
+         * (Bc250ActiveD2GartMirrorReservation), antes do TMR e de qualquer
+         * alocacao TOP_DOWN dele.
+         */
+        BC250_VRAM_ALLOCATOR *gartAllocator = &Context->GlobalMmuAllocator;
+        BC250_VRAM_REGION gartRegion;
+        /*
+         * COMP.VA.3b (doc 746): a Corrida 292 provou que o offset fixo e o
+         * TOP_DOWN falham (status=6, NO_SPACE: o topo da VRAM esta' cheio de
+         * TMR, firmware, MQD e tabelas; o mapa DX.67 mostrava so' parte das
+         * regioes). Agora: a primeira fatia livre de 64 KB do topo para baixo,
+         * so' por ReserveFixed (que recusa sobreposicao). Se cair dentro do
+         * segmento do VidMm, o corte DX.67 (que roda depois, no QUERYSEGMENT4)
+         * encolhe o segmento para baixo dela.
+         */
+        BC250_VRAM_STATUS gartVram = BC250_VRAM_NO_SPACE;
+        const char *gartWhere = "VARREDURA";
+        uint64_t gartTry = BC250_D2_GART_TABLE_VRAM_OFFSET;
+        uint32_t gartAttempts = 0u;
+        while (gartTry >= BC250_D2_GART_TABLE_SCAN_FLOOR && gartAttempts < 512u) {
+            ++gartAttempts;
+            gartVram = Bc250VramReserveFixed(gartAllocator, gartTry,
+                BC250_D2_GART_TABLE_BYTES, 65536ull, BC250_VRAM_ROLE_GART,
+                BC250_VRAM_ALLOC_CPU_VISIBLE, &Context->D2GartTableToken);
+            if (gartVram == BC250_VRAM_OK) break;
+            gartTry -= 65536ull;
+        }
+        RtlZeroMemory(&gartRegion, sizeof(gartRegion));
+        if (gartVram != BC250_VRAM_OK ||
+            Bc250VramGetRegion(gartAllocator, Context->D2GartTableToken, &gartRegion) != BC250_VRAM_OK ||
+            gartRegion.Length < BC250_D2_GART_TABLE_BYTES ||
+            vramBar->Length < gartRegion.Offset + BC250_D2_GART_TABLE_BYTES) {
+            Bc250DisplayLog("[D2_GART] NAO TENTADO: reserva de %llu bytes para a tabela da GART falhou (status=%u, %u tentativas de 0x%llX ate 0x%llX, alocador MMU total=0x%llX cpu=0x%llX) -- anel segue na VRAM\n",
+                (unsigned long long)BC250_D2_GART_TABLE_BYTES, (uint32_t)gartVram, gartAttempts,
+                (unsigned long long)BC250_D2_GART_TABLE_VRAM_OFFSET,
+                (unsigned long long)BC250_D2_GART_TABLE_SCAN_FLOOR,
+                (unsigned long long)gartAllocator->TotalBytes,
+                (unsigned long long)gartAllocator->CpuVisibleBytes);
+            return STATUS_DEVICE_NOT_READY;
+        }
+        Context->D2GartTableOffset = gartRegion.Offset;
+        Context->D2GartTableReserved = TRUE;
+        Context->D2GartTableMirrored = FALSE;
+        Bc250DisplayLog("[D2_GART] TABELA RESERVADA (%s no alocador da MMU global, %u tentativas): VRAM [0x%llX,+0x%llX) para %u PTEs (GART de %llu MB)\n",
+            gartWhere, gartAttempts, (unsigned long long)gartRegion.Offset,
+            (unsigned long long)BC250_D2_GART_TABLE_BYTES, BC250_GCVM_GART_ENTRIES,
+            (unsigned long long)(BC250_GCVM_GART_BYTES >> 20));
+    }
     dummyPa = topologyBase + Context->GlobalMmuDummyOffset;
-    tablePa = topologyBase + BC250_D2_GART_TABLE_VRAM_OFFSET;
+    tablePa = topologyBase + Context->D2GartTableOffset;
 
     status = Bc250SdmaPresentAllocateSystemRingWork(&ram, &ramPa);
     if (!NT_SUCCESS(status)) {
@@ -21505,9 +23129,9 @@ static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context)
         Bc250SdmaPresentFreeSystemRingWork(ram);
         return STATUS_DEVICE_NOT_READY;
     }
-    tablePhys.QuadPart = (LONGLONG)Bc250VramCpuTranslate(vramBar->Start + BC250_D2_GART_TABLE_VRAM_OFFSET);
+    tablePhys.QuadPart = (LONGLONG)Bc250VramCpuTranslate(vramBar->Start + Context->D2GartTableOffset);
     tableCpu = (volatile uint64_t *)Bc250VramCpuMapTranslated(tablePhys,
-        vramBar->Start + BC250_D2_GART_TABLE_VRAM_OFFSET,
+        vramBar->Start + Context->D2GartTableOffset,
         BC250_GCVM_GART_ENTRIES * sizeof(uint64_t));
     if (tableCpu == NULL) {
         Bc250DisplayLog("[D2_GART] NAO TENTADO: MmMapIoSpace da tabela falhou\n");
@@ -21515,7 +23139,7 @@ static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context)
         Bc250SdmaPresentFreeSystemRingWork(ram);
         return STATUS_DEVICE_NOT_READY;
     }
-    Bc250LogUcVramMapping("D2_GART_TABLE", BC250_D2_GART_TABLE_VRAM_OFFSET,
+    Bc250LogUcVramMapping("D2_GART_TABLE", Context->D2GartTableOffset,
         BC250_GCVM_GART_ENTRIES * sizeof(uint64_t));
     for (i = 0u; i < BC250_GCVM_GART_ENTRIES; ++i) {
         tableCpu[i] = staging[i];
@@ -21529,9 +23153,9 @@ static NTSTATUS Bc250ActiveRunD2Gart(BC250_DXGK_ACTIVE_CONTEXT *Context)
     for (i = 0u; i < 4u; ++i) {
         Context->D2GartExpected[i] = staging[BC250_D2_GART_RING_ENTRY + i];
     }
-    Bc250DisplayLog("[D2_GART] TABELA: VRAM 0x%llX (PA 0x%llX) 512 PTEs, PTE[0]=0x%llX PTE[32]=0x%llX PTE[33]=0x%llX PTE[34]=0x%llX, readback divergentes=%u\n",
-        (unsigned long long)BC250_D2_GART_TABLE_VRAM_OFFSET,
-        (unsigned long long)tablePa,
+    Bc250DisplayLog("[D2_GART] TABELA: VRAM 0x%llX (PA 0x%llX) %u PTEs, PTE[0]=0x%llX PTE[32]=0x%llX PTE[33]=0x%llX PTE[34]=0x%llX, readback divergentes=%u\n",
+        (unsigned long long)Context->D2GartTableOffset,
+        (unsigned long long)tablePa, BC250_GCVM_GART_ENTRIES,
         (unsigned long long)staging[0],
         (unsigned long long)staging[BC250_D2_GART_RING_ENTRY],
         (unsigned long long)staging[BC250_D2_GART_RING_ENTRY + 1u],

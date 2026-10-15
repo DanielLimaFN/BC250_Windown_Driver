@@ -124,12 +124,17 @@ typedef struct _BC250_UMD_RESOURCE {
      * alocacao WDDM deste recurso (VkMem importada pela GPUVA). Sem copia e
      * sem segunda alocacao; recopiar para ela seria copiar a memoria sobre si. */
     BOOL VkMemAliased;
+    /* ZC.1 (doc 749): render target apresentavel com alias; o Present nao copia. */
+    BOOL ZeroCopyTarget;
     /* Numero de DDIs de escrita de textura que chegaram a fonte unica de
      * sincronia (UpdateSubresourceUP ou Unmap). Diagnostico por recurso; nao
      * afirma que o upload Vulkan concluiu. */
     UINT TextureWriteDdiCount;
     BOOL VkResourceCreated;
     BOOL WddmAllocationUploaded;
+    /* SUBALOC.1 (doc 762): fatia de um bloco compartilhado (NULL = memoria propria). */
+    VkDeviceSize VkMemOffset;
+    void *VkSubAllocBlock;
 } BC250_UMD_RESOURCE;
 
 /* Maximum simultaneous render targets and viewports */
@@ -440,6 +445,37 @@ typedef struct _BC250_UMD_DEVICE {
      * estaticos; Bc250UmdRejectUnbackedDraw o publica em vez do diagnostico
      * historico e falso de "PM4 ausente". */
     const char* LastVkDrawFailureReason;
+    /*
+     * MENU.1 (doc 754): tempo por fase do CreateDevice ao 1o Present, em ticks
+     * de QPC. Na 294 o menu levou 1,4-3,0 s por abertura e o log de 15 ms nao
+     * dizia onde; uma linha [MENU1] por device responde.
+     */
+    LARGE_INTEGER Menu1Start;
+    UINT64 Menu1InitTicks;
+    UINT64 Menu1BridgeTicks;
+    UINT64 Menu1CreateTicks;
+    UINT64 Menu1WaitTicks;
+    UINT64 Menu1VkResTicks;
+    UINT64 Menu1UploadTicks;
+    UINT32 Menu1Creates;
+    UINT32 Menu1Waits;
+    UINT32 Menu1VkRes;
+    UINT32 Menu1Uploads;
+    BOOL Menu1Reported;
+    /* PAG.1 (doc 754): esperas de paginacao adiadas no CreateResource (recurso
+     * com memoria Vulkan propria) e as que precisaram ser feitas depois. */
+    UINT32 Pag1Deferred;
+    UINT32 Pag1WaitedLater;
+    /* WSI.2 (doc 759): fences compartilhadas com a RADV do app e o Present
+     * armado pela WSI (bc250_umd_wsi.c). */
+    BC250_WINSYS_MONITORED_FENCE WsiFences[4];
+    UINT32 WsiFenceCount;
+    volatile LONG WsiArmed;
+    void *WsiArmResource;
+    UINT32 WsiArmRenderFence;
+    UINT32 WsiArmPresentFence;
+    UINT64 WsiArmRenderValue;
+    UINT64 WsiArmPresentValue;
 } BC250_UMD_DEVICE;
 
 /* Device foundation lifecycle helpers */

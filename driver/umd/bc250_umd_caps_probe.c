@@ -189,7 +189,7 @@ const char* Bc250UmdCapsTypeName(UINT Type)
 /* Frente B (doc 547) -- ver bc250_umd_caps_probe.h. */
 const char* Bc250UmdFrenteBPreCheck(BOOL AllocCreated, UINT64 GpuVa, UINT64 AllocBytes,
     UINT MipLevels, UINT ArraySize, UINT SampleCount, BOOL DepthStencil, BOOL RenderTarget, BOOL OpenedSurface,
-    UINT Width, UINT Height, UINT RowPitch)
+    BOOL PresentableTarget, UINT Width, UINT Height, UINT RowPitch)
 {
     if (!AllocCreated || GpuVa == 0u || AllocBytes < 4096u) return "sem alocacao WDDM mapeada";
     if (MipLevels > 1u || ArraySize > 1u || SampleCount > 1u) return "mips/array/msaa (linear so' 1x1x1)";
@@ -198,11 +198,13 @@ const char* Bc250UmdFrenteBPreCheck(BOOL AllocCreated, UINT64 GpuVa, UINT64 Allo
      * perderam o conteudo fora do que era redesenhado (6 de 61 Presents cheios,
      * contra 28 de 29 na 188). Mecanismo ainda H; render target volta a ter
      * memoria propria ate ele ser medido. */
-    if (RenderTarget) return "render target fica com memoria propria (Corrida 190)";
+    if (RenderTarget && !PresentableTarget) return "render target fica com memoria propria (Corrida 190)";
     /* Corridas 191 e 192: o MESMO IB (Fnv64 4092CF3C8621F809, shaders D86B7E93/59C609E5)
      * travou a GPU duas vezes lendo uma textura propria 256x80 com Alias=1. Mecanismo H;
      * o alias fica so' nas superficies abertas de outro processo, onde o ganho foi medido. */
-    if (!OpenedSurface) return "textura propria fica com memoria propria (Corridas 191/192)";
+    /* ZC.1 (doc 749): o render target apresentavel e' do proprio processo e
+     * entra pelo alias; a regra das 191/192 segue para textura propria. */
+    if (!OpenedSurface && !PresentableTarget) return "textura propria fica com memoria propria (Corridas 191/192)";
     if (Width == 0u || Height == 0u || RowPitch == 0u) return "geometria incompleta";
     if ((UINT64)RowPitch * (UINT64)Height > AllocBytes) return "pitch*altura maior que a alocacao";
     return NULL;

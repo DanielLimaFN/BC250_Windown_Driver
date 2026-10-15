@@ -146,3 +146,219 @@ h1{font-size:26px}
 .oc-res-details code{font-family:Consolas,monospace;background:var(--app);padding:4px 6px;border-radius:4px;border:1px solid var(--border);font-size:11px;word-break:break-word}
 .oc-res-details p{margin:0;font-size:11px;color:var(--text);line-height:1.5}
 .oc-res-details pre{margin:0;font-family:Consolas,monospace;font-size:10px;background:var(--app);padding:6px;border-radius:4px;border:1px solid var(--border);overflow-x:auto;white-space:pre-wrap}
+
+/* ======================================================= */
+/* STANDALONE INSTALLER WINDOW STYLES                      */
+/* ======================================================= */
+body.installer-active{overflow:hidden;background:#0c0e12}
+body.installer-active .sidebar,
+body.installer-active .titlebar,
+body.installer-active #dashboard-app{display:none!important}
+
+#installer-app{display:flex;flex-direction:column;width:100vw;height:100vh;background:#0c0e12;color:#f0f2f5;font-family:'Segoe UI Variable Display','Segoe UI',sans-serif;user-select:none;overflow:hidden}
+
+.installer-titlebar{height:38px;background:#0c0e12;border-bottom:1px solid #1c202a;display:flex;align-items:center;justify-content:space-between;padding:0 14px;-webkit-app-region:drag}
+.installer-titlebar-left{display:flex;align-items:center;gap:10px;font-size:12px}
+.installer-brand-mark{width:20px;height:20px;display:grid;place-items:center}
+.installer-brand-mark img{width:100%;height:100%;display:block}
+.installer-app-name{font-weight:700;color:#f0f2f5;letter-spacing:-.2px}
+.installer-title-divider{color:#444b58}
+.installer-setup-title{color:#8c94a5;font-size:11px}
+
+.installer-titlebar-right{display:flex;align-items:center;gap:10px;-webkit-app-region:no-drag}
+.installer-util-btn{background:transparent;border:1px solid #232733;color:#8c94a5;font-size:10px;padding:3px 9px;min-height:24px;border-radius:4px;cursor:pointer}
+.installer-util-btn:hover{background:#161922;color:#f0f2f5;border-color:#383e50}
+.win-controls{display:flex;align-items:center;margin-left:6px}
+.win-btn{width:32px;height:28px;display:grid;place-items:center;font-size:11px;color:#8c94a5;cursor:default}
+.win-btn:hover{background:#1c202b;color:#fff}
+.win-btn.close:hover{background:#e01e37;color:#fff}
+
+.installer-shell{display:grid;grid-template-columns:300px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
+
+/* Left Sidebar */
+.installer-sidebar{background:#0e1016;border-right:1px solid #1c202a;padding:20px 16px 14px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}
+.installer-brand-card{background:linear-gradient(135deg,#161922,#12141c);border:1px solid #232733;border-radius:8px;padding:14px}
+.brand-badge-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.brand-mark-box{width:36px;height:36px;border-radius:7px;background:linear-gradient(135deg,#e01e37,#9e1022);display:grid;place-items:center;padding:4px}
+.brand-mark-box img{width:100%;height:100%}
+.brand-badge-row strong{font-size:14px;display:block;color:#fff;letter-spacing:-.3px}
+.brand-badge-row span{font-size:11px;color:#e01e37;font-weight:600}
+.installer-pkg-info{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #232733;padding-top:8px;font-size:10px}
+.pkg-label{color:#8c94a5;font-weight:600;letter-spacing:.5px}
+.pkg-version{font-family:Consolas,monospace;color:#6ccb8e}
+
+.chip-spec-box{background:#141720;border:1px solid #232733;border-radius:8px;padding:12px 14px}
+.chip-spec-title{display:flex;align-items:center;gap:7px;font-size:10px;color:#e01e37;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.chip-spec-title i svg{width:14px;height:14px}
+.chip-spec-box strong{font-size:13px;color:#fff;display:block}
+.chip-spec-box p{font-size:11px;color:#8c94a5;margin:3px 0 8px}
+.chip-spec-tags{display:flex;gap:5px;flex-wrap:wrap}
+.spec-tag{font-size:9px;padding:2px 6px;border-radius:3px;background:#1e2330;color:#cdd1de;border:1px solid #2c3244;font-family:Consolas,monospace}
+
+/* Vertical Stepper */
+.vertical-stepper{display:flex;flex-direction:column;gap:4px;margin:4px 0}
+.vstep{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:6px;cursor:default;color:#6b7280;transition:all .15s ease;border-left:3px solid transparent}
+.vstep.active{background:#161922;color:#f0f2f5;border-left-color:#e01e37}
+.vstep.done{color:#6ccb8e}
+.vstep-num{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;background:#1c202b;border:1px solid #282d3b;color:#8c94a5;flex-shrink:0}
+.vstep.active .vstep-num{background:#e01e37;color:#fff;border-color:transparent}
+.vstep.done .vstep-num{background:#1c3624;color:#7cd99b;border-color:#2b5738}
+.vstep-info{display:flex;flex-direction:column;gap:1px}
+.vstep-info strong{font-size:12px;font-weight:600}
+.vstep-info small{font-size:10px;color:#6b7280}
+.vstep.active .vstep-info small{color:#8c94a5}
+
+.installer-sidebar .open-source-strip{margin-top:auto;padding:8px 10px;gap:8px;background:#141720;border:1px solid #232733;border-left:3px solid #e01e37;box-sizing:border-box;max-height:80px;overflow:hidden;flex-shrink:0}
+.installer-sidebar .open-source-strip h2{font-size:11px;margin:0 0 2px;line-height:1.2;color:#fff}
+.installer-sidebar .open-source-strip p{font-size:9px;line-height:1.3;margin:0;color:#8c94a5}
+.installer-sidebar .source-symbol{width:28px;height:28px;font-size:13px;background:#1e2330;color:#e01e37;flex-shrink:0}
+
+/* Right Stage */
+.installer-stage{background:#12151c;padding:26px 36px;overflow-y:auto;display:flex;flex-direction:column}
+.installer-card{background:#161922;border:1px solid #232733;border-radius:8px;padding:26px;box-shadow:0 4px 20px #0004}
+
+.installer-step-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:22px}
+.step-header-icon{width:46px;height:46px;border-radius:8px;background:#1e2330;color:#e01e37;display:grid;place-items:center;flex-shrink:0}
+.step-header-icon i svg{width:24px;height:24px}
+.step-counter{font-size:10px;font-weight:700;letter-spacing:1.5px;color:#e01e37;display:block;margin-bottom:4px}
+.installer-step-header h2{font-size:20px;color:#fff;letter-spacing:-.4px}
+.installer-step-header p{font-size:12px;color:#8c94a5;margin-top:4px}
+
+/* Language Grid */
+.lang-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}
+.lang-card{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid #282d3b;border-radius:8px;background:#1a1e28;cursor:pointer;text-align:left;transition:all .15s ease;width:100%}
+.lang-card:hover{background:#1f2430;border-color:#3c4356}
+.lang-card.selected{border-color:#e01e37;background:#241a20;box-shadow:0 0 0 1px #e01e37}
+.flag-wrapper{width:48px;height:32px;border-radius:4px;overflow:hidden;flex-shrink:0;box-shadow:0 1px 3px #0004;display:flex;align-items:center;justify-content:center}
+.flag-icon{width:100%;height:100%;display:block}
+.lang-meta{flex:1;display:flex;flex-direction:column;gap:2px}
+.lang-meta strong{font-size:14px;color:#f0f2f5}
+.lang-meta span{font-size:11px;color:#8c94a5}
+.lang-badge{font-size:9px;padding:2px 7px;border-radius:4px;background:#141720;border:1px solid #282d3b;color:#8c94a5}
+
+/* Step 2: Path Picker & VRAM */
+.install-path-box{background:#1a1e28;border:1px solid #282d3b;border-radius:8px;padding:16px 18px;margin-bottom:18px}
+.path-box-header strong{font-size:13px;color:#f0f2f5;display:block;margin-bottom:3px}
+.path-box-header p{font-size:11px;color:#8c94a5;margin:0}
+.path-input-row{display:flex;gap:10px;margin:12px 0 10px}
+.path-input-wrapper{flex:1;position:relative;display:flex;align-items:center}
+.path-field-icon{position:absolute;left:11px;color:#8c94a5}
+.path-field-icon svg{width:16px;height:16px}
+#install-path-input{width:100%;padding:8px 12px 8px 36px;font-family:Consolas,monospace;font-size:12px;background:#0e1015;border:1px solid #2d3342;color:#f0f2f5;border-radius:5px}
+#install-path-input:focus{border-color:#e01e37;outline:none}
+.disk-space-meter{font-size:11px;color:#8c94a5;margin-top:6px}
+.disk-meter-info{display:flex;justify-content:space-between;margin-bottom:5px}
+.disk-meter-info strong{color:#cdd1de}
+.disk-bar-track{height:5px;background:#0e1015;border-radius:3px;overflow:hidden;border:1px solid #232733}
+.disk-bar-fill{height:100%;background:#0078d4;border-radius:3px}
+
+.vram-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.vram-card{display:flex;flex-direction:column;gap:6px;padding:14px 12px;border:1px solid #282d3b;border-radius:8px;background:#1a1e28;text-align:left;cursor:pointer;transition:all .15s ease;min-height:92px}
+.vram-card:hover{background:#1f2430}
+.vram-card.selected{border-color:#e01e37;background:#241a20;box-shadow:0 0 0 1px #e01e37}
+.vram-card-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.vram-card-top strong{font-size:15px;font-weight:600;color:#f0f2f5}
+.vram-tag{font-size:9px;padding:1px 5px;border-radius:3px;background:#141720;color:#8c94a5}
+.vram-tag.recommended{background:#1c3624;color:#7cd99b;font-weight:600;border:1px solid #2b5738}
+.vram-card p{font-size:10px;color:#8c94a5;line-height:1.4;margin:0}
+
+.memory-visualizer{padding:14px 16px;margin-bottom:18px;background:#1a1e28;border:1px solid #282d3b;border-radius:8px}
+.mem-viz-header{display:flex;justify-content:space-between;font-size:11px;font-weight:500;color:#f0f2f5;margin-bottom:8px}
+.mem-bar-track{display:flex;height:16px;border-radius:4px;overflow:hidden;background:#0e1015;border:1px solid #282d3b}
+.mem-bar-vram{background:#e01e37;height:100%;transition:width .3s cubic-bezier(.4,0,.2,1)}
+.mem-bar-ram{background:#3a4254;height:100%;transition:width .3s cubic-bezier(.4,0,.2,1)}
+.mem-viz-legend{display:flex;gap:20px;font-size:10px;color:#8c94a5;margin-top:8px}
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+.vram-dot{background:#e01e37}
+.ram-dot{background:#3a4254}
+
+.vram-notice{display:flex;gap:12px;padding:14px 16px;background:#1a202c;border:1px solid #2b3950;border-radius:8px;margin-bottom:12px}
+.notice-icon{color:#0078d4;flex-shrink:0}
+.notice-text strong{display:block;font-size:12px;color:#f0f2f5;margin-bottom:3px}
+.notice-text p{font-size:11px;line-height:1.6;color:#8c94a5;margin:0}
+
+/* Step 3: Beta Mode */
+.beta-content{padding:16px 20px;margin-bottom:16px;background:#1a1e28;border:1px solid #282d3b;border-radius:8px}
+.beta-content h3{font-size:14px;color:#f0f2f5;margin-bottom:8px}
+.beta-content p{font-size:11px;line-height:1.6;margin-bottom:8px;color:#8c94a5}
+.beta-checklist{list-style:none;padding:0;margin:12px 0 0;display:flex;flex-direction:column;gap:8px}
+.beta-checklist li{display:flex;align-items:center;gap:9px;font-size:11px;color:#f0f2f5}
+.beta-checklist i{color:#6ccb8e}
+.consent-checkbox-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #282d3b;border-radius:8px;background:#1a1e28;cursor:pointer;user-select:none;transition:background .15s}
+.consent-checkbox-card:hover{background:#1f2430}
+.consent-checkbox-card input[type="checkbox"]{width:16px;height:16px;cursor:pointer;accent-color:#e01e37}
+.consent-text{font-size:12px;font-weight:500;color:#f0f2f5}
+
+/* Step 4: UAC Flow */
+.uac-prompt-box{background:#1a1e28;border:1px solid #282d3b;border-radius:8px;padding:20px;margin-bottom:18px}
+.uac-box-header{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+.uac-shield-large{width:42px;height:42px;flex-shrink:0}
+.uac-shield-svg{width:100%;height:100%;display:block}
+.uac-box-title{flex:1;min-width:200px}
+.uac-box-title h3{font-size:15px;color:#fff;margin:0 0 3px}
+.uac-box-title p{font-size:11px;color:#8c94a5;margin:0}
+.uac-routine-list{display:flex;flex-direction:column;gap:10px;margin:16px 0}
+.uac-routine-item{display:flex;gap:12px;align-items:flex-start;background:#12151d;padding:12px 14px;border-radius:6px;border:1px solid #232733}
+.uac-dot-num{width:22px;height:22px;border-radius:50%;background:#1e2330;display:grid;place-items:center;font-size:11px;font-weight:700;color:#e01e37;flex-shrink:0}
+.uac-routine-item strong{font-size:12px;color:#f0f2f5;display:block;margin-bottom:2px}
+.uac-routine-item p{font-size:11px;color:#8c94a5;margin:0}
+.uac-routine-item code{font-family:Consolas,monospace;background:#0c0e12;padding:2px 6px;border-radius:3px;color:#60b5ff}
+.uac-action-panel{display:flex;align-items:center;gap:14px;margin-top:14px;padding-top:14px;border-top:1px solid #282d3b;flex-wrap:wrap}
+.uac-grant-btn{background:#0078d4;color:#fff;font-weight:600}
+.btn-uac-shield{width:18px;height:18px;flex-shrink:0}
+.uac-verified-note{font-size:11px;color:#6ccb8e;display:flex;align-items:center;gap:6px}
+
+/* Step 5: Loading & Scripts */
+.loading-body{display:flex;flex-direction:column;gap:14px}
+.script-badges{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
+.script-badge{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #282d3b;border-radius:6px;background:#1a1e28;font-size:11px;color:#8c94a5}
+.script-badge.active{border-color:#e01e37;color:#ff4d61;background:#241a20;font-weight:500}
+.script-badge.done{border-color:#2b5738;color:#7cd99b;background:#1c3624;font-weight:500}
+.badge-icon{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:600;background:#282d3b;color:#f0f2f5}
+.terminal-container{border-radius:6px;overflow:hidden;background:#08090c;border:1px solid #232733;box-shadow:0 4px 16px #0007}
+.terminal-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:#12141a;border-bottom:1px solid #232733}
+.terminal-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.terminal-dot.red{background:#ff5f56}
+.terminal-dot.yellow{background:#ffbd2e}
+.terminal-dot.green{background:#27c93f}
+.terminal-title{font-family:Consolas,monospace;font-size:10px;color:#8a8d98;margin-left:8px}
+.terminal-content{margin:0;padding:12px;font-family:'Cascadia Code',Consolas,monospace;font-size:11px;line-height:1.6;color:#cdd1de;max-height:160px;min-height:120px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.spin-icon svg{animation:spin 1.5s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+/* Step 6: Success */
+.success-hero{text-align:center;padding:20px 16px 14px}
+.success-hero h2{font-size:22px;color:#fff;margin-bottom:6px}
+.success-hero p{font-size:12px;color:#8c94a5;margin-bottom:12px}
+.post-boot-card{display:flex;align-items:center;gap:14px;padding:14px 16px;background:#1a1e28;border-left:4px solid #e01e37;border:1px solid #282d3b;border-left-width:4px;border-radius:8px;margin:16px 0}
+.post-boot-icon{width:40px;height:40px;border-radius:8px;background:#241a20;color:#e01e37;display:grid;place-items:center;flex-shrink:0}
+.post-boot-content h3{font-size:13px;color:#fff;margin-bottom:3px}
+.post-boot-content p{font-size:11px;color:#8c94a5;margin:0}
+.success-actions-row{display:flex;gap:12px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
+
+/* Action Bars */
+.installer-action-bar{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #282d3b;padding-top:18px;margin-top:22px;gap:10px}
+.action-bar-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:#8c94a5}
+.action-btn-group{display:flex;gap:10px}
+.subtle-btn{background:transparent;border:1px solid #282d3b;color:#f0f2f5}
+.subtle-btn:hover{background:#1f2430;border-color:#3c4356}
+button.primary{background:#e01e37;color:#fff;border:0}
+button.primary:hover{background:#f02844}
+
+.hardware-detect-box{padding:12px;margin-bottom:16px;background:#1a1e28;border:1px solid #282d3b;border-radius:8px}
+.binding-progress-box{padding:14px 16px;margin-bottom:16px;background:#1a1e28;border:1px solid #282d3b;border-radius:8px}
+
+@media(max-width:960px){
+  .installer-shell{grid-template-columns:250px minmax(0,1fr)}
+  .installer-stage{padding:20px}
+  .vram-grid{grid-template-columns:repeat(3,1fr)}
+  .lang-grid{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .installer-shell{grid-template-columns:1fr}
+  .installer-sidebar{display:none}
+  .vram-grid{grid-template-columns:repeat(2,1fr)}
+  .script-badges{grid-template-columns:1fr}
+}
+
+

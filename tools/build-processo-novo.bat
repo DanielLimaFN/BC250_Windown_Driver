@@ -21,7 +21,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo Compilando bc250-processo-novo.exe...
-cl.exe /nologo /O2 /W4 /WX /wd4201 /DUNICODE /D_UNICODE "%OUTDIR%bc250-processo-novo.c" /Fe:"%OUTDIR%bc250-processo-novo.exe" /Fo:"%OUTDIR%bc250-processo-novo.obj" d3d11.lib dxgi.lib dxguid.lib
+cl.exe /nologo /O2 /W4 /WX /wd4201 /DUNICODE /D_UNICODE "%OUTDIR%bc250-processo-novo.c" /Fe:"%OUTDIR%bc250-processo-novo.exe" /Fo:"%OUTDIR%bc250-processo-novo.obj" d3d11.lib dxgi.lib dxguid.lib user32.lib gdi32.lib
 if %ERRORLEVEL% neq 0 (
     echo ERRO na compilacao de bc250-processo-novo.exe.
     exit /b 1

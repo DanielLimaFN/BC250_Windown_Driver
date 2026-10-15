@@ -210,6 +210,16 @@ int Bc250AllocationMayUseSystemSegment(
     const BC250_ALLOCATION_PRIVATE_V1 *Request);
 
 /*
+ * APU.2b (doc 741, Corrida 289): quem pode preferir o segmento 2 na APU.2.
+ * Falso para a primaria e para buffer de comando (flag RADV_COMMAND ou classe
+ * COMMAND): o KMD le o DW0 do IB pela VRAM para o IB de aquecimento da DX.43,
+ * e com o IB no segmento 2 a leitura falha (21/21 CABECA_ILEGIVEL na 289,
+ * contra 6.247/6.247 EMITIDO na 288) e o GFX trava na troca de VMID.
+ */
+int Bc250AllocationApuMayPreferSystem(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request);
+
+/*
  * M2 (doc 548): alocacao que pode morar no segmento 3 (VRAM sem CPU). So' as
  * da RADV (token que nao e' de nenhuma classe da UMD) SEM a flag de CPU: as
  * imagens otimizadas que estouravam o segmento 1 (Corridas 189 e 193). Nenhuma
@@ -253,6 +263,20 @@ typedef struct BC250_ALLOCATION_SEGMENT_POLICY {
 int Bc250AllocationRadvSystemSegmentPolicy(
     const BC250_ALLOCATION_PRIVATE_V1 *Request,
     int CpuVisible,
+    BC250_ALLOCATION_SEGMENT_POLICY *Out);
+
+/*
+ * APU.2c (doc 742, Corrida 290): politica de segmento da APU.2 em fonte unica.
+ *   primaria                      -> devolve 0 (o chamador mantem o segmento 1)
+ *   buffer de comando             -> 0x1, preferido 1   (DX.43 le o IB pela VRAM)
+ *   classe da UMD sem GPU_VA_ONLY -> 0x3, preferido 1,2 (a composicao do KMD le
+ *                                    a superficie por MC; so resolve na VRAM)
+ *   resto (RADV, GPU_VA_ONLY)     -> 0x3, preferido 2,1
+ * Na 290 os alvos de tela cheia do DWM (RESOURCE com CPU) foram ao segmento 2,
+ * o COMPOSITE_BLT recusou 160 de 160 e a tela ficou preta (288: 4.907 OK).
+ */
+int Bc250AllocationApuSegmentPolicy(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request,
     BC250_ALLOCATION_SEGMENT_POLICY *Out);
 
 #endif

@@ -451,6 +451,18 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
      * anel grafico emitidos com INT_SEL=2.
      */
     volatile LONG64 IhGfxEops;
+    /*
+     * C06 (doc 764): erros do CP no anel grafico, como gfx_v10_0_priv_reg_irq,
+     * gfx_v10_0_priv_inst_irq e o bad opcode (CP_INT_CNTL_RING0 bits 22-24, o
+     * valor 0x05C00000 do rastro do amdgpu nesta placa). So' contagem e o
+     * ultimo ring_id/dw; o TDR continua sendo do dxgkrnl.
+     */
+    volatile LONG64 IhCpPrivReg;
+    volatile LONG64 IhCpPrivInstr;
+    volatile LONG64 IhCpBadOpcode;
+    volatile LONG64 IhCpRsvdBit;
+    volatile LONG IhCpErrLastDw0;
+    volatile LONG IhCpErrLastDw1;
     volatile LONG64 IhGfxDpcKicks;
     volatile LONG64 CpEopIntsEmitted;
     /*
@@ -531,6 +543,11 @@ extern BC250_SDMA_PRESENT_CONTEXT g_Bc250SdmaPresent;
 #define BC250_IH_CLIENT_GRBM_CP     0x14u
 #define BC250_IH_SRC_SDMA_TRAP      0xE0u
 #define BC250_IH_SRC_CP_EOP         0xB5u
+/* irqsrcs_gfx_10_1.h (P1): 180 PM4 rsvd bit, 183 bad opcode, 184 priv reg, 185 priv instr. */
+#define BC250_IH_SRC_CP_RSVD_BIT    0xB4u
+#define BC250_IH_SRC_CP_BAD_OPCODE  0xB7u
+#define BC250_IH_SRC_CP_PRIV_REG    0xB8u
+#define BC250_IH_SRC_CP_PRIV_INSTR  0xB9u
 #define BC250_IH_ENTRY_BYTES        32u
 
 /*
@@ -662,6 +679,19 @@ BOOLEAN Bc250SdmaPresentBltRect(
     _In_ ULONG DestY,
     _In_ ULONG Width,
     _In_ ULONG Height);
+
+/* COMP.VA (doc 743): copia pela janela da GART, com invalidacao da VMID 0 antes. */
+BOOLEAN Bc250SdmaPresentBltViaGartWindow(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ ULONG SourcePitchBytes,
+    _In_ uint64_t DestGpuAddress,
+    _In_ ULONG DestPitchBytes,
+    _In_ ULONG DestX,
+    _In_ ULONG DestY,
+    _In_ ULONG Width,
+    _In_ ULONG Height,
+    _In_ ULONG LinearBytes,
+    _In_ BOOLEAN FlushGart); /* COMP.VA.3: FALSE quando a janela nao mudou */
 
 /* DX.32: o scanout recebeu, por inteiro e sem escrita posterior, esta origem? */
 BOOLEAN Bc250SdmaPresentScanoutHoldsFullCopyOf(

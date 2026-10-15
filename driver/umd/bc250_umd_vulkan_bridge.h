@@ -232,11 +232,55 @@ typedef struct _BC250_UMD_VK_BRIDGE {
      */
     BOOL PipelineIrCaptureEnabled;
     uint32_t PipelineIrDumpCount;
+    /*
+     * PSO.1 (doc 751): a RADV no Windows nao tem cache de shader em disco
+     * (meson.build: "Shader Cache does not currently work on Windows") e a UMD
+     * criava pipeline com VK_NULL_HANDLE: todo device novo recompilava tudo no
+     * ACO. Agora um VkPipelineCache por device, carregado de e gravado em
+     * %TEMP%\bc250_pso_v1.bin. Funcoes carregadas sem ser fatais.
+     */
+    VkPipelineCache PsoCache;
+    uint32_t PsoCacheNewSinceSave;
+    uint32_t PsoCacheLoadedBytes;
+    /* PSO.1b (doc 754): tamanho da ultima gravacao; mesmo tamanho = nada novo,
+     * nao regrava (a 294 regravava 39.664 bytes repetidos). */
+    uint32_t PsoCacheSavedBytes;
+    uint32_t PsoCacheSkippedSaves;
+    /* MENU.1 (doc 754): submissoes da ponte e o tempo gasto nelas (QPC). */
+    uint64_t Menu1FlushTicks;
+    uint32_t Menu1Flushes;
+    char PsoCachePath[MAX_PATH];
+    PFN_vkCreatePipelineCache pfnCreatePipelineCache;
+    PFN_vkGetPipelineCacheData pfnGetPipelineCacheData;
+    PFN_vkDestroyPipelineCache pfnDestroyPipelineCache;
     PFN_vkGetPipelineExecutablePropertiesKHR pfnGetPipelineExecutableProperties;
     PFN_vkGetPipelineExecutableInternalRepresentationsKHR pfnGetPipelineExecutableInternalRepresentations;
 
+    /*
+     * SUBALOC.1 (Corrida 301, doc 762): buffers e texturas pequenos (<= 1 MiB,
+     * sem render target/depth, nao compartilhados) saem de blocos de 4 MiB em
+     * vez de um vkAllocateMemory cada. Na 299/300 o DWM gastava ~34 ms por
+     * CreateResource, ~8 ms deles na alocacao da RADV e na espera de paginacao
+     * dela (doc 755). Desliga com HKLM\SOFTWARE\BC250\Umd\SubAlloc=0.
+     */
+    struct BC250_SUBALOC_BLOCK *SubAllocBlocks;
+    SRWLOCK SubAllocLock;
+    uint32_t SubAllocTaken;
+    uint32_t SubAllocReleased;
+    uint32_t SubAllocBlocksCreated;
+    uint32_t SubAllocRefused;
+    int SubAllocEnabled; /* 0 = ainda nao lido; 1 = ligado; 2 = desligado */
+
     BC250_VK_DISPATCH vk;
 } BC250_UMD_VK_BRIDGE;
+
+/* SUBALOC.1: tenta pegar uma fatia; FALSE = use o vkAllocateMemory de sempre. */
+BOOL Bc250UmdVkSubAllocTake(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t TypeIndex,
+    VkDeviceSize Size, VkDeviceSize Alignment, _Out_ VkDeviceMemory *pMemory,
+    _Out_ VkDeviceSize *pOffset, _Out_ void **ppBlock);
+VOID Bc250UmdVkSubAllocRelease(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_ void *pBlock, VkDeviceSize Offset);
+_Ret_maybenull_ void *Bc250UmdVkSubAllocMapped(_In_ void *pBlock, VkDeviceSize Offset);
+VOID Bc250UmdVkSubAllocTeardown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
 
 VOID Bc250UmdVkDumpPipelineIr(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, VkPipeline pipeline,
     const void *vsModuleTag, const void *psModuleTag);
@@ -277,6 +321,9 @@ VkSampler Bc250UmdVkCachedSampler(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_ con
 /* Submete e espera o que estiver gravado, antes de destruir ou reescrever um
  * objeto que um draw pendente pode referenciar. Sem gravacao: nao faz nada. */
 VkResult Bc250UmdVkDrainPending(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_z_ const char *reason);
+/* PSO.1 (doc 751): grava o cache de pipelines (taxa limitada; Force ignora o limite). */
+VOID Bc250UmdVkPsoCacheNoteNewPipeline(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
+VOID Bc250UmdVkPsoCacheSave(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_z_ const char *why);
 /* Bytes livres no anel (0 se o anel nao existe e nao pode ser criado). */
 VkDeviceSize Bc250UmdVkDrawRingFree(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
 /* Copia Bytes para uma faixa nova do anel; FALSE se nao couber (o chamador

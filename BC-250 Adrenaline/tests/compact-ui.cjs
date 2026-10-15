@@ -6,7 +6,7 @@ const page=await browser.newPage({viewport:{width:1280,height:820},colorScheme:'
 await page.goto('http://127.0.0.1:4175');assert.equal(await page.locator('.install-hero').count(),0);
 assert.ok((await page.locator('.open-source-strip').boundingBox()).height<110);
 await page.screenshot({path:path.join(root,'artifacts/compact-installation.png'),fullPage:true});
-await page.locator('[data-page=sensors]').click();await page.locator('[data-action=skip-install]').click();
+await page.locator('#installer-skip-btn').click();
 for(const width of [1440,1280,1024,800,640]){
  await page.setViewportSize({width,height:820});await page.locator('[data-page=overview]').click();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'page overflow at '+width);

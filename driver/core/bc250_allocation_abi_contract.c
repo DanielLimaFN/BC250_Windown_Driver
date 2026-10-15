@@ -218,6 +218,42 @@ int Bc250AllocationMayUseSystemSegment(
             BC250_ALLOCATION_TOKEN_CLASS_RESOURCE;
 }
 
+int Bc250AllocationApuSegmentPolicy(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request,
+    BC250_ALLOCATION_SEGMENT_POLICY *Out)
+{
+    if (Out != NULL) memset(Out, 0, sizeof(*Out));
+    if (Request == NULL || Out == NULL) return 0;
+    if (Bc250AllocationIsPrimary(Request)) return 0;
+    if ((Request->Flags & BC250_ALLOCATION_FLAG_RADV_COMMAND) != 0u ||
+        BC250_ALLOCATION_TOKEN_CLASS(Request->AllocationToken) ==
+            BC250_ALLOCATION_TOKEN_CLASS_COMMAND) {
+        Out->SegmentSet = 0x1u;
+        Out->Preferred0 = 1u;
+        Out->Preferred1 = 0u;
+        return 1;
+    }
+    if (Bc250AllocationTokenIsUmdClass(Request->AllocationToken) &&
+        !Bc250AllocationMayUseSystemSegment(Request)) {
+        Out->SegmentSet = 0x3u;
+        Out->Preferred0 = 1u;
+        Out->Preferred1 = 2u;
+        return 1;
+    }
+    Out->SegmentSet = 0x3u;
+    Out->Preferred0 = 2u;
+    Out->Preferred1 = 1u;
+    return 1;
+}
+
+int Bc250AllocationApuMayPreferSystem(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request)
+{
+    BC250_ALLOCATION_SEGMENT_POLICY policy;
+    return Bc250AllocationApuSegmentPolicy(Request, &policy) &&
+        policy.Preferred0 == 2u;
+}
+
 
 static int Bc250AllocationTokenIsUmdClass(uint64_t AllocationToken)
 {

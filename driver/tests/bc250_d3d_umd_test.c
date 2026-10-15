@@ -1276,20 +1276,27 @@ static void TestFrenteBAliasPolicy(void)
 
     printf("[TEST] Testing Frente B alias policy...\n");
 
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) == NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, FALSE, 2592, 1088, 10496) == NULL);
     assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 0, 10496, bytes, 4096) == NULL);
 
-    assert(Bc250UmdFrenteBPreCheck(FALSE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
-    assert(Bc250UmdFrenteBPreCheck(TRUE, 0, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 2, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 6, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 4, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, TRUE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1089, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(FALSE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, 0, bytes, 1, 1, 1, FALSE, FALSE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 2, 1, 1, FALSE, FALSE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 6, 1, FALSE, FALSE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 4, FALSE, FALSE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, TRUE, FALSE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, FALSE, 2592, 1089, 10496) != NULL);
     /* Corrida 190: render target (swapchain do DWM) fica fora do alias. */
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, TRUE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, TRUE, TRUE, FALSE, 2592, 1088, 10496) != NULL);
+    /* ZC.1 (doc 749): render target apresentavel (primaria/compartilhada do proprio
+     * processo) entra pelo alias; nao-aberto e nao-apresentavel continua fora. */
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, TRUE, FALSE, TRUE, 2592, 1088, 10496) == NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, TRUE, FALSE, FALSE, 2592, 1088, 10496) != NULL);
+    /* contraponto: apresentavel nao fura depth-stencil nem mips */
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, TRUE, TRUE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 2, 1, 1, FALSE, TRUE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
     /* Corridas 191/192: textura propria (nao aberta de outro processo) fica fora do alias. */
-    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, FALSE, 256, 80, 1024) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, FALSE, FALSE, 256, 80, 1024) != NULL);
 
     /* pitch sem o alinhamento de 256 B (2592*4) */
     assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 0, 10368, bytes, 4096) != NULL);

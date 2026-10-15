@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=10/12/2026,3.422.0.0
+DriverVer=10/15/2026,3.456.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -11,6 +11,7 @@ PnpLockdown=1
 DefaultDestDir=12
 BC250Mcdm.CopyFiles=12
 BC250Mcdm.DisplayCopyFiles=11
+BC250Mcdm.VulkanFiles=13
 
 [SourceDisksNames]
 1=%DiskName%,,,""
@@ -25,6 +26,9 @@ cyan_skillfish2_pfp.bin=1
 cyan_skillfish2_me.bin=1
 cyan_skillfish2_ce.bin=1
 cyan_skillfish2_mec.bin=1
+vulkan_radeon.dll=1
+z-1.dll=1
+bc250_vk_icd.json=1
 
 [Manufacturer]
 %ManufacturerName%=Standard,NTamd64.10.0
@@ -34,7 +38,7 @@ cyan_skillfish2_mec.bin=1
 %DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE
 
 [BC250Mcdm_Device.NT]
-CopyFiles=BC250Mcdm.CopyFiles, BC250Mcdm.DisplayCopyFiles
+CopyFiles=BC250Mcdm.CopyFiles, BC250Mcdm.DisplayCopyFiles, BC250Mcdm.VulkanFiles
 AddReg=BC250Mcdm_SoftwareDeviceSettings
 FeatureScore=FC
 
@@ -57,6 +61,10 @@ HKR,,UserModeDriverNameWow,0x00010000,"bc250umd.dll","bc250umd.dll","bc250umd.dl
 HKR,,D3D10UMD,,"bc250umd.dll"
 HKR,,D3D11UMD,,"bc250umd.dll"
 HKR,,D3D12UMD,,"bc250umd.dll"
+; WSI.1/ICD.1 (doc 757): o loader do Vulkan acha o driver pelo adaptador, como
+; nos drivers da AMD (VulkanDriverName na chave do adaptador, JSON no DriverStore).
+; So' 64 bits: nao ha RADV de 32 bits.
+HKR,,VulkanDriverName,0x00010000,%13%\bc250_vk_icd.json
 
 [BC250Mcdm_Device.NT.Services]
 AddService=bc250mcdm,0x00000002,BC250Mcdm_Service_Inst
@@ -128,10 +136,32 @@ HKR,Parameters,DebugTrace,0x00010001,0
 HKR,Parameters,DcnFlip,0x00010001,0
 ; DCN.2 (doc 713): bits sobre o DCN do GOP -- 1 VSYNC/flip pela interrupcao do
 ; DCN, 2 CRC do OTG0, 4 cursor por hardware, 8 EDID real por AUX, 0x10 apagar o
-; OTG com o monitor (DPMS), 0x20 timing medido do OTG0 no VidPn. Cada bit escreve
-; so' o seu bloco e volta como o GOP deixou. Default 0; o empacotador de
-; laboratorio materializa 0x3F com -DcnExt.
+; OTG com o monitor (DPMS), 0x20 timing medido do OTG0 no VidPn, 0x40 leitura
+; do roteamento das interrupcoes do OTG0/DCHUB (D06, doc 716/doc 718, SO'
+; LEITURA), 0x80 pad DDC1/AUX0 em modo hardware/AUX (D12, doc 716/doc 718,
+; ESCREVE DC_GPIO_DDC1_MASK, so' durante a leitura do EDID), 0x100 prova de
+; troca de refresh pelo V_TOTAL (D19, doc 716 par.6.4/doc 720, ESCREVE
+; OTG0_V_TOTAL, autocontida: muda, mede pela varredura e devolve ao valor do
+; GOP antes do desktop aparecer). Cada bit escreve so' o seu bloco (ou nada,
+; se for so' leitura) e volta como o GOP deixou. Default 0; o empacotador de
+; laboratorio materializa o valor pedido com -DcnExt (doc 714: CRC fora;
+; doc 718: 0x40/0x80 propostos para a 274; doc 720: 0x100 proposto para a 275).
 HKR,Parameters,DcnExt,0x00010001,0
+; GfxClkMhz (CLK.1, Corrida 301, doc 762): clock do GFX pedido a SMU pelo
+; RequestGfxclk (0xE) com a tensao automatica (UnforceGfxVid), como o
+; cyan_skillfish_ppt.c do amdgpu, na faixa 1000..2000 MHz dele. 0 = nao mexe.
+; O alvo original volta no StopDevice. O empacotador de laboratorio
+; materializa o valor pedido com -GfxClkMhz.
+HKR,Parameters,GfxClkMhz,0x00010001,0
+; DpmMaxMhz (C08/DPM.1, doc 765): governador de clock do GFX pela carga, com
+; teto termico 87/90/82 C, na faixa 1000..2000 MHz do amdgpu. 0 = desligado.
+; Nao convive com GfxClkMhz != 0. O empacotador de laboratorio materializa o
+; valor pedido com -DpmMaxMhz.
+HKR,Parameters,DpmMaxMhz,0x00010001,0
+; ApuUnifiedMemory (Corrida 288, doc 739): 1 habilita o modelo de memoria unificada da APU BC-250
+; (16 GB GDDR6). Alocacoes nao-primarias suportam os Segmentos 1 e 2 (VRAM carveout e
+; Abertura/GART de sistema), eliminando asfixia de VRAM e tempestades de eviccao.
+HKR,Parameters,ApuUnifiedMemory,0x00010001,1
 ; B.1 (14/09): 1 fotografa o anel grafico CP_RB0 -- CNTL, BASE, RPTR, WPTR,
 ; POLL_CNTL e ME_CNTL -- durante o bring-up de laboratorio. E' SOMENTE LEITURA:
 ; o contrato nao escreve registrador algum, e o transporte MMIO confirma por
@@ -164,6 +194,11 @@ cyan_skillfish2_mec.bin
 
 [BC250Mcdm.DisplayCopyFiles]
 bc250umd.dll
+
+[BC250Mcdm.VulkanFiles]
+vulkan_radeon.dll
+z-1.dll
+bc250_vk_icd.json
 
 [Strings]
 ProviderName="AMD BC-250 Driver Project"

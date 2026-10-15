@@ -86,13 +86,18 @@ ULONG Bc250DisplayDcnFlipArmed(void);
 #define BC250_DCN2_KEY_EDID    0x08u /* EDID real por AUX (+ HPD so' leitura) */
 #define BC250_DCN2_KEY_DPMS    0x10u /* apagar/acender o OTG com o monitor */
 #define BC250_DCN2_KEY_TIMING  0x20u /* timing medido do OTG0 no VidPn */
-#define BC250_DCN2_KEY_ALL     0x3Fu
+/* Propostos para a 274 (doc 716 par.5, doc 718). */
+#define BC250_DCN2_KEY_IRQ_DEST    0x40u  /* D06, SO' LEITURA: roteamento OTG0_INTERRUPT_DEST/DCHUB_INTERRUPT_DEST2 */
+#define BC250_DCN2_KEY_AUX_HW_MODE 0x80u  /* D12, ESCREVE: pad DDC1/AUX0 em modo hardware/AUX so' durante o EDID */
+/* Proposto para a 275 (doc 720). */
+#define BC250_DCN2_KEY_VTOTAL_TEST 0x100u /* D19, ESCREVE: prova que V_TOTAL muda o refresh; autocontido, devolve antes do desktop */
+#define BC250_DCN2_KEY_ALL     0x1FFu
 VOID Bc250DisplaySetDcnExt(ULONG Keys);
 ULONG Bc250DisplayDcnExtKeys(void);
 VOID Bc250DisplaySetDcnCursorVram(UINT64 VramOffset, UINT64 Bytes);
 ULONG Bc250DisplayDcnCursorReady(void);
 /* ISR do IH (DIRQL), cliente DCE: ack e DPC de VSYNC. TRUE = consumido. */
-BOOLEAN Bc250DisplayDcnIsr(ULONG SrcId);
+BOOLEAN Bc250DisplayDcnIsr(ULONG SrcId, ULONG ExtId);
 
 void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled);
 BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void);
@@ -288,10 +293,38 @@ void Bc250DisplayLogSamplingSummary(void);
  * do rastro duravel chama, em PASSIVE com APCs ligadas, a cada tique.
  */
 void Bc250DisplayLogDrainFromWorker(void);
+/*
+ * TDRLOG.1 (Corrida 301, doc 762): passo do TDR gravado em
+ * C:\BC250_TDR_PASSOS.txt com write-through e flush ANTES de o passo rodar.
+ * Na 300 a maquina morreu entre o ResetFromTimeout e o restart, e as linhas
+ * do anel em RAM se perderam. Tambem vai ao log normal. Ativa uma janela de
+ * "TDR em curso" em que DDIs de paginacao/submissao deixam a propria linha.
+ */
+void Bc250TdrStep(const char *Format, ...);
+/* Mesma linha, sem disco: para DDIs que podem rodar na thread de paginacao. */
+void Bc250TdrStepRam(const char *Format, ...);
+void Bc250TdrWindowSet(_In_ BOOLEAN Open);
+_Check_return_ BOOLEAN Bc250TdrWindowIsOpen(void);
 #else
 static __inline void Bc250DisplayLog(const char *Format, ...)
 {
     UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250TdrStep(const char *Format, ...)
+{
+    UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250TdrStepRam(const char *Format, ...)
+{
+    UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250TdrWindowSet(_In_ BOOLEAN Open)
+{
+    UNREFERENCED_PARAMETER(Open);
+}
+static __inline BOOLEAN Bc250TdrWindowIsOpen(void)
+{
+    return FALSE;
 }
 static __inline void Bc250DisplayLogSamplingSummary(void)
 {

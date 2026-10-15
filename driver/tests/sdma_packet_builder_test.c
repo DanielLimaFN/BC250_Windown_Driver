@@ -453,6 +453,25 @@ static int Bc250RunSdmaPacketBuilderTest(void)
 
         /* o pedido e' o mesmo do flush por MMIO (bc250_paging_contract.c) */
         CHECK(Bc250GcvmInvalidateRequestValue(9u, 0u) == 0x00F80200u);
+
+        /* COMP.VA (doc 743): VMID 0 so' pelo emissor proprio da GART. */
+        {
+            static const uint32_t gartGolden[15] = {
+                0xF000000Eu, 0x000028A4u, 0x00F80001u,
+                0x30000008u, 0x0000A290u, 0x00000000u, 0x00000000u, 0x00000000u, 0x0FFF000Au,
+                0x30000008u, 0x0000A2D8u, 0x00000000u, 0x00000001u, 0x00000001u, 0x0FFF000Au
+            };
+            cursor = 0u;
+            memset(g_ring, 0, sizeof(g_ring));
+            CHECK(Bc250SdmaEmitGartInvalidate(g_ring, TEST_RING_DWORDS, &cursor,
+                BC250_SDMA_INVALIDATE_ENGINE) == BC250_SDMA_OK);
+            CHECK(cursor == BC250_SDMA_DWORDS_VM_INVALIDATE);
+            for (i = 0u; i < 15u; ++i) CHECK(g_ring[i] == gartGolden[i]);
+            cursor = 0u;
+            CHECK(Bc250SdmaEmitGartInvalidate(g_ring, TEST_RING_DWORDS, &cursor, 17u) == BC250_SDMA_BAD_ARGUMENT);
+            CHECK(Bc250SdmaEmitVmInvalidate(g_ring, TEST_RING_DWORDS, &cursor, 1u, 0u, 0u) == BC250_SDMA_BAD_ARGUMENT);
+            CHECK(cursor == 0u);
+        }
     }
 
     /*

@@ -218,6 +218,14 @@ if exist "!SOURCE!" (
     )
 )
 if exist "!SOURCE!" (
+    rem Corrida 274 (doc 720): a 1a tentativa achou o .sys "em uso por outro
+    rem processo" mesmo com o dispositivo desabilitado, e o KMD nunca logou
+    rem StopDevice. So' leitura, nao decide nada: registra se o Windows ainda
+    rem considera o servico RODANDO nesse instante, para a proxima vez que
+    rem isso acontecer ter o estado exato em vez de precisar de outra corrida.
+    call :note Diagnostico (so' leitura) do estado do servico no instante da falha:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+        "try { Get-CimInstance Win32_SystemDriver -Filter \"Name='bc250mcdm'\" | Select-Object Name,State,Started,StartMode | Format-List | Out-String | Write-Output } catch { Write-Output ('[diagnostico] falhou: ' + $_.Exception.Message) }" >>"%LOG%" 2>&1
     call :note ERRO: !SOURCE! ainda existe depois da exclusao forcada.
     exit /b 1
 )

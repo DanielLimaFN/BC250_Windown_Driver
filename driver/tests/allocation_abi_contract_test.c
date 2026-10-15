@@ -551,6 +551,76 @@ static int TestAbiRadvDomainAndCommand(void)
     return 1;
 }
 
+/*
+ * APU.2b (doc 741, Corrida 289): na APU.2 so' prefere o segmento 2 quem nao e'
+ * primaria nem buffer de comando. Na 289 o IB da RADV foi para o segmento 2, a
+ * DX.43 nao leu o DW0 (21/21 CABECA_ILEGIVEL) e o GFX travou (0x116).
+ */
+static int TestApuMayPreferSystem(void)
+{
+    const uint64_t radvToken = 0x0000023400001000ull;
+    const uint64_t cmdToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_COMMAND << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    const uint64_t primToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    const uint64_t resToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    BC250_ALLOCATION_PRIVATE_V1 blob;
+    BC250_ALLOCATION_SEGMENT_POLICY policy;
+
+    memset(&blob, 0, sizeof(blob));
+    CHECK(!Bc250AllocationApuMayPreferSystem(NULL));
+    /* IB da RADV: fica na VRAM, com ou sem GTT pedido. */
+    blob.AllocationToken = radvToken;
+    blob.Flags = BC250_ALLOCATION_FLAG_RADV_COMMAND;
+    CHECK(!Bc250AllocationApuMayPreferSystem(&blob));
+    blob.Flags = BC250_ALLOCATION_FLAG_RADV_COMMAND | BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT;
+    CHECK(!Bc250AllocationApuMayPreferSystem(&blob));
+    /* Classe COMMAND da UMD e primaria: VRAM. */
+    blob.Flags = 0u;
+    blob.AllocationToken = cmdToken;
+    CHECK(!Bc250AllocationApuMayPreferSystem(&blob));
+    blob.AllocationToken = primToken;
+    CHECK(!Bc250AllocationApuMayPreferSystem(&blob));
+    /* Contraponto: textura da RADV e recurso da UMD continuam indo ao 2. */
+    blob.AllocationToken = radvToken;
+    CHECK(Bc250AllocationApuMayPreferSystem(&blob));
+    blob.Flags = BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT;
+    CHECK(Bc250AllocationApuMayPreferSystem(&blob));
+    /*
+     * APU.2c (doc 742, Corrida 290): recurso da UMD sem GPU_VA_ONLY e' lido
+     * pela composicao do KMD por MC; prefere a VRAM e transborda para o 2.
+     * Na 290 ele foi ao 2 e o COMPOSITE_BLT recusou 160/160 (tela preta).
+     */
+    blob.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+    blob.AllocationToken = resToken;
+    CHECK(!Bc250AllocationApuMayPreferSystem(&blob));
+    CHECK(Bc250AllocationApuSegmentPolicy(&blob, &policy));
+    CHECK(policy.SegmentSet == 0x3u && policy.Preferred0 == 1u && policy.Preferred1 == 2u);
+    /* Contraponto: com GPU_VA_ONLY (M1) a UMD declarou que ninguem le por MC. */
+    blob.Flags = BC250_ALLOCATION_FLAG_GPU_VA_ONLY;
+    CHECK(Bc250AllocationApuMayPreferSystem(&blob));
+    CHECK(Bc250AllocationApuSegmentPolicy(&blob, &policy));
+    CHECK(policy.SegmentSet == 0x3u && policy.Preferred0 == 2u && policy.Preferred1 == 1u);
+    /* Comando: so' o segmento 1. */
+    blob.Flags = 0u;
+    blob.AllocationToken = cmdToken;
+    CHECK(Bc250AllocationApuSegmentPolicy(&blob, &policy));
+    CHECK(policy.SegmentSet == 0x1u && policy.Preferred0 == 1u);
+    blob.AllocationToken = radvToken;
+    blob.Flags = BC250_ALLOCATION_FLAG_RADV_COMMAND;
+    CHECK(Bc250AllocationApuSegmentPolicy(&blob, &policy));
+    CHECK(policy.SegmentSet == 0x1u && policy.Preferred0 == 1u);
+    /* Primaria e NULL: sem politica (o chamador mantem o segmento 1). */
+    blob.Flags = 0u;
+    blob.AllocationToken = primToken;
+    CHECK(!Bc250AllocationApuSegmentPolicy(&blob, &policy));
+    CHECK(policy.SegmentSet == 0u);
+    CHECK(!Bc250AllocationApuSegmentPolicy(NULL, &policy));
+    CHECK(!Bc250AllocationApuSegmentPolicy(&blob, NULL));
+    return 1;
+}
+
 static int Run(void)
 {
     CHECK(TestAbiStructureFrozen());
@@ -558,6 +628,7 @@ static int Run(void)
     CHECK(TestAbiParseAllErrorCodes());
     CHECK(TestAbiTokenClassification());
     CHECK(TestAbiGpuVaOnlySystemSegment());
+    CHECK(TestApuMayPreferSystem());
     CHECK(TestAbiRadvDomainAndCommand());
     return 1;
 }

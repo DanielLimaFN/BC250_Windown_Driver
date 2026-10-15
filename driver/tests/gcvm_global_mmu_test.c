@@ -282,7 +282,7 @@ static int Run(void)
         CHECK(Bc250GcvmGartBuildTable(table, BC250_GCVM_GART_ENTRIES,
             0x46FFFF000ull, 0x453B1F000ull, 0u, 2u) == 0u);
         CHECK(Bc250GcvmGartBuildTable(table, BC250_GCVM_GART_ENTRIES,
-            0x46FFFF000ull, 0x453B1F000ull, 511u, 2u) == 0u);
+            0x46FFFF000ull, 0x453B1F000ull, BC250_GCVM_GART_ENTRIES - 1u, 2u) == 0u);
         CHECK(Bc250GcvmGartBuildTable(table, BC250_GCVM_GART_ENTRIES,
             0x46FFFF000ull, 0x453B1F800ull, 1u, 2u) == 0u);
         CHECK(Bc250GcvmGartBuildTable(table, BC250_GCVM_GART_ENTRIES,
@@ -308,7 +308,8 @@ static int Run(void)
         CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_PT_BASE_HI / 4u] == 0x00000004u);
         CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_PT_START_LO / 4u] == 0u);
         CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_PT_START_HI / 4u] == 0u);
-        CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_PT_END_LO / 4u] == 0x1FFu);
+        /* COMP.VA.3 (doc 745): 32 MB -> gart_end >> 12 = 0x1FFF. */
+        CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_PT_END_LO / 4u] == 0x1FFFu);
         CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_PT_END_HI / 4u] == 0u);
         /* ENABLE=1, DEPTH=0, RETRY=0; os defaults de fault do POST ficam. */
         CHECK(f->Registers[BC250_REG_GCVM_CONTEXT0_CNTL / 4u] == 0x007FFE01u);

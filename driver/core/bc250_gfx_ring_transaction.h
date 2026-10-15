@@ -148,6 +148,16 @@ extern "C" {
     0x00800000u | 0x00100000u | 0x00004000u | 0x04000000u | 0x40000000u | \
     0x00008000u | 0x00400000u | 0x00010000u)
 #define BC250_GRBM_STATUS_CP_BUSY_ANY        (0x20000000u | 0x10000000u)
+/*
+ * C05 (doc 764): gfx_v10_0_ring_soft_recovery (inc/linux_ref/gfx_v10_0.c:8753).
+ * mmSQ_CMD = 0x111B, BASE_IDX 0 -> (0x1260 + 0x111B) * 4 = 0x8DEC (regcalc do
+ * Nagi confere). Campos de gc_10_1_0_sh_mask.h: CMD [3:0], MODE [6:4],
+ * CHECK_VMID [7], VM_ID [31:28]. CMD 3 = mata a onda, MODE 1 = broadcast.
+ */
+#define BC250_GFX_REG_SQ_CMD                 0x00008DECu
+#define BC250_SQ_CMD_KILL_BROADCAST          (0x3u | (0x1u << 4))
+#define BC250_SQ_CMD_CHECK_VMID              0x00000080u
+#define BC250_SQ_CMD_VM_ID_SHIFT             28u
 
 /*
  * DIAGNOSTICO EM TEMPO REAL E TELEMETRIA DE HARDWARE -- classe P1 (docs/03 e gc_10_1_0).

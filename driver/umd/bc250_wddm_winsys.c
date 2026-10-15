@@ -77,6 +77,117 @@ static BOOL CALLBACK Bc250WinsysHangTraceInit(PINIT_ONCE Once, PVOID Parameter, 
     return TRUE;
 }
 
+/* FRAME1 (doc 762): contadores do processo e o inicio de cada fase por thread.
+ * Criar/destruir aninham paginacao e flushes: o que acontece dentro deles
+ * conta na propria categoria E dentro de criar/destruir; a linha diz isso. */
+static volatile LONG64 g_Bc250Frame1Ticks[BC250_FRAME1_COUNT];
+static volatile LONG g_Bc250Frame1Calls[BC250_FRAME1_COUNT];
+static volatile LONG64 g_Bc250Frame1Nested[BC250_FRAME1_COUNT];
+static volatile LONG64 g_Bc250Frame1WindowStart;
+static volatile LONG g_Bc250Frame1Presents;
+static volatile LONG g_Bc250Frame1Reporting;
+static __declspec(thread) UINT64 t_Bc250Frame1Start[BC250_FRAME1_COUNT];
+static __declspec(thread) LONG t_Bc250Frame1Depth;
+
+UINT64 Bc250WinsysFrame1Now(void)
+{
+    LARGE_INTEGER q;
+    QueryPerformanceCounter(&q);
+    return (UINT64)q.QuadPart;
+}
+
+static void Bc250WinsysFrame1Report(UINT64 Now)
+{
+    static LARGE_INTEGER s_freq;
+    char line[640];
+    UINT64 start = (UINT64)InterlockedCompareExchange64(&g_Bc250Frame1WindowStart, 0, 0);
+    double wallMs, sumMs, ms[BC250_FRAME1_COUNT], nestedMs[BC250_FRAME1_COUNT];
+    LONG calls[BC250_FRAME1_COUNT];
+    LONG presents;
+    unsigned i;
+
+    if (s_freq.QuadPart == 0) QueryPerformanceFrequency(&s_freq);
+    if (s_freq.QuadPart <= 0 || start == 0u || Now <= start) return;
+    wallMs = (double)(Now - start) * 1000.0 / (double)s_freq.QuadPart;
+    if (wallMs < 2000.0) return;
+    if (InterlockedCompareExchange(&g_Bc250Frame1Reporting, 1, 0) != 0) return;
+    presents = InterlockedExchange(&g_Bc250Frame1Presents, 0);
+    for (i = 0; i < BC250_FRAME1_COUNT; ++i) {
+        ms[i] = (double)InterlockedExchange64(&g_Bc250Frame1Ticks[i], 0) * 1000.0 / (double)s_freq.QuadPart;
+        nestedMs[i] = (double)InterlockedExchange64(&g_Bc250Frame1Nested[i], 0) * 1000.0 / (double)s_freq.QuadPart;
+        calls[i] = InterlockedExchange(&g_Bc250Frame1Calls[i], 0);
+    }
+    InterlockedExchange64(&g_Bc250Frame1WindowStart, (LONG64)Now);
+    /* Topo: criar, destruir, Present, desenho, Map e o flush que NAO foi dentro de criar/destruir. */
+    sumMs = ms[BC250_FRAME1_CREATE] + ms[BC250_FRAME1_DESTROY] + ms[BC250_FRAME1_PRESENT] +
+            ms[BC250_FRAME1_DRAW] + ms[BC250_FRAME1_MAP] +
+            (ms[BC250_FRAME1_FLUSH_SUBMIT] - nestedMs[BC250_FRAME1_FLUSH_SUBMIT]) +
+            (ms[BC250_FRAME1_FLUSH_GPU_WAIT] - nestedMs[BC250_FRAME1_FLUSH_GPU_WAIT]);
+    if (_snprintf_s(line, sizeof(line), _TRUNCATE,
+            "[FRAME1] janela=%.2f s quadros=%ld (%.1f/s, %.1f ms/quadro) | criar=%.1f ms (n=%ld) destruir=%.1f (n=%ld) "
+            "paginacao=%.1f (n=%ld) present=%.1f (n=%ld) envio=%.1f (n=%ld) espera_gpu=%.1f desenho=%.1f (n=%ld) map=%.1f (n=%ld) "
+            "| dentro de criar/destruir: paginacao=%.1f envio=%.1f espera_gpu=%.1f | soma do topo=%.1f ms, resto (app ou ocioso)=%.1f ms -- tempos somados de todas as threads",
+            wallMs / 1000.0, (long)presents, presents * 1000.0 / wallMs,
+            presents > 0 ? wallMs / presents : 0.0,
+            ms[0], (long)calls[0], ms[1], (long)calls[1], ms[2], (long)calls[2], ms[3], (long)calls[3],
+            ms[4], (long)calls[4], ms[5], ms[6], (long)calls[6], ms[7], (long)calls[7],
+            nestedMs[2], nestedMs[4], nestedMs[5], sumMs, wallMs - sumMs) >= 0) {
+        Bc250WinsysTraceRaw(line);
+    }
+    InterlockedExchange(&g_Bc250Frame1Reporting, 0);
+}
+
+void Bc250WinsysFrame1Add(BC250_FRAME1_CATEGORY Category, UINT64 QpcTicks)
+{
+    if ((unsigned)Category >= BC250_FRAME1_COUNT) return;
+    InterlockedAdd64(&g_Bc250Frame1Ticks[Category], (LONG64)QpcTicks);
+    InterlockedIncrement(&g_Bc250Frame1Calls[Category]);
+    if (t_Bc250Frame1Depth > 0 && Category != BC250_FRAME1_CREATE && Category != BC250_FRAME1_DESTROY) {
+        InterlockedAdd64(&g_Bc250Frame1Nested[Category], (LONG64)QpcTicks);
+    }
+}
+
+void Bc250WinsysFrame1AddMicros(BC250_FRAME1_CATEGORY Category, UINT64 Micros)
+{
+    static LARGE_INTEGER s_freq;
+    if (s_freq.QuadPart == 0) QueryPerformanceFrequency(&s_freq);
+    if (s_freq.QuadPart <= 0) return;
+    Bc250WinsysFrame1Add(Category, Micros * (UINT64)s_freq.QuadPart / 1000000ull);
+}
+
+static void Bc250WinsysFrame1Observe(const char *Operation, const char *Phase, UINT64 Qpc)
+{
+    BC250_FRAME1_CATEGORY cat;
+    BOOL begin, end;
+    if (strcmp(Operation, "CREATE_LOCK_SHARED") == 0) cat = BC250_FRAME1_CREATE;
+    else if (strcmp(Operation, "DESTROY_LOCK_SHARED") == 0) cat = BC250_FRAME1_DESTROY;
+    else if (strcmp(Operation, "WAIT_PAGING") == 0) cat = BC250_FRAME1_PAGING;
+    else if (strcmp(Operation, "PRESENT_CB") == 0 || strcmp(Operation, "PRESENT1_CB") == 0) cat = BC250_FRAME1_PRESENT;
+    else return;
+    begin = strcmp(Phase, "ENTER") == 0 || strcmp(Phase, "WAIT") == 0;
+    end = strcmp(Phase, "LEAVE") == 0 || strcmp(Phase, "RELEASE") == 0 || strcmp(Phase, "TIMEOUT") == 0;
+    if (begin) {
+        if (t_Bc250Frame1Start[cat] == 0u && (cat == BC250_FRAME1_CREATE || cat == BC250_FRAME1_DESTROY)) {
+            ++t_Bc250Frame1Depth;
+        }
+        t_Bc250Frame1Start[cat] = Qpc;
+        if (InterlockedCompareExchange64(&g_Bc250Frame1WindowStart, 0, 0) == 0) {
+            InterlockedCompareExchange64(&g_Bc250Frame1WindowStart, (LONG64)Qpc, 0);
+        }
+    } else if (end && t_Bc250Frame1Start[cat] != 0u) {
+        UINT64 d = Qpc > t_Bc250Frame1Start[cat] ? Qpc - t_Bc250Frame1Start[cat] : 0u;
+        t_Bc250Frame1Start[cat] = 0u;
+        if ((cat == BC250_FRAME1_CREATE || cat == BC250_FRAME1_DESTROY) && t_Bc250Frame1Depth > 0) {
+            --t_Bc250Frame1Depth;
+        }
+        Bc250WinsysFrame1Add(cat, d);
+        if (cat == BC250_FRAME1_PRESENT && strcmp(Phase, "LEAVE") == 0) {
+            InterlockedIncrement(&g_Bc250Frame1Presents);
+            Bc250WinsysFrame1Report(Qpc);
+        }
+    }
+}
+
 UINT64 Bc250WinsysHangSpan(void)
 {
     return (UINT64)InterlockedIncrement64(&g_Bc250HangSpanSequence);
@@ -89,9 +200,10 @@ void Bc250WinsysHangEvent(const char *Operation, const char *Phase,
     LARGE_INTEGER qpc;
     LONG64 sequence;
     if (Operation == NULL || Phase == NULL) return;
+    QueryPerformanceCounter(&qpc);
+    Bc250WinsysFrame1Observe(Operation, Phase, (UINT64)qpc.QuadPart);
     (void)InitOnceExecuteOnce(&g_Bc250HangTraceOnce, Bc250WinsysHangTraceInit, NULL, NULL);
     if (!g_Bc250HangTraceEnabled) return;
-    QueryPerformanceCounter(&qpc);
     sequence = InterlockedIncrement64(&g_Bc250HangEventSequence);
     if (_snprintf_s(message, sizeof(message), _TRUNCATE,
             "BC250_HANG v=1 seq=%llu span=%llu tid=%lu qpc=%llu op=%s phase=%s owner=%p a=0x%llX b=0x%llX hr=0x%08X",
@@ -156,7 +268,15 @@ static BOOL Bc250WinsysTraceIsEssential(const char *message)
         "REMOVED", "hr=0x8", "res=-", "RECUSA", "ABORT", "INVALID", "NAO ", "AVISO",
         "Present", "OpenAdapter", "CloseAdapter", "CreateDevice", "DestroyDevice",
         "CreatePresentContext", "DestroyPresentContext", "BC250_HANG", "I.1", "ICD",
-        "SELECIONADO", "LOGMIN", "DeviceExecutionState", "ExecutionState"
+        "SELECIONADO", "LOGMIN", "DeviceExecutionState", "ExecutionState",
+        /* doc 750: a 293 perdeu as linhas da ZC.1 e da Frente B SIM para o LOGMIN */
+        "ZC1", "FRENTE_B", "PISC1", "PSO1", "SHADER_TRANSLATOR",
+        /* doc 754 */
+        "MENU1", "PAG1",
+        /* doc 757 */
+        "WSI1",
+        /* doc 762 */
+        "FRAME1", "SUBALOC1", "RES1"
     };
     unsigned i;
     for (i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
@@ -1071,6 +1191,12 @@ BC250_WINSYS_STATUS Bc250WinsysUploadAllocation(
         Context->Callbacks->pfnUnlockCb == NULL) {
         return BC250_WINSYS_MISSING_CALLBACK;
     }
+    /* PAG.1 (doc 754): o CreateResource pode ter adiado a espera de paginacao;
+     * instantaneo se a cerca ja passou. */
+    if (Allocation->PagingFenceValue != 0u && Context->PagingQueueCreated) {
+        BC250_WINSYS_STATUS pagingStatus = Bc250WinsysWaitPaging(Context, Allocation);
+        if (pagingStatus != BC250_WINSYS_OK) return pagingStatus;
+    }
 
     memset(&lockArgs, 0, sizeof(lockArgs));
     lockArgs.hAllocation = Allocation->KernelAllocation;
@@ -1137,6 +1263,11 @@ BC250_WINSYS_STATUS Bc250WinsysReadAllocation(
         return BC250_WINSYS_MISSING_CALLBACK;
     }
 
+    /* PAG.1 (doc 754): espera adiada pelo CreateResource, se ainda pendente. */
+    if (Allocation->PagingFenceValue != 0u && Context->PagingQueueCreated) {
+        BC250_WINSYS_STATUS pagingStatus = Bc250WinsysWaitPaging(Context, Allocation);
+        if (pagingStatus != BC250_WINSYS_OK) return pagingStatus;
+    }
     memset(&lockArgs, 0, sizeof(lockArgs));
     lockArgs.hAllocation = Allocation->KernelAllocation;
     lockArgs.Flags.LockEntire = 1u;
@@ -1171,6 +1302,33 @@ BC250_WINSYS_STATUS Bc250WinsysReadAllocation(
 
     Context->LastCallbackHr = S_OK;
     return BC250_WINSYS_OK;
+}
+
+BC250_WINSYS_STATUS Bc250WinsysSetPriority(
+    BC250_WINSYS_CONTEXT *Context,
+    const BC250_WINSYS_ALLOCATION *Allocation,
+    UINT Priority,
+    HRESULT *pResult)
+{
+    D3DDDICB_SETPRIORITY args;
+    UINT prio = Priority;
+    HRESULT hr;
+    if (pResult != NULL) *pResult = E_INVALIDARG;
+    if (Context == NULL || !Context->Initialized || Allocation == NULL || !Allocation->Created ||
+        Allocation->KernelAllocation == 0u) {
+        return BC250_WINSYS_BAD_ARGUMENT;
+    }
+    if (Context->Callbacks == NULL || Context->Callbacks->pfnSetPriorityCb == NULL) {
+        if (pResult != NULL) *pResult = E_NOTIMPL;
+        return BC250_WINSYS_MISSING_CALLBACK;
+    }
+    memset(&args, 0, sizeof(args));
+    args.NumAllocations = 1u;
+    args.HandleList = &Allocation->KernelAllocation;
+    args.pPriorities = &prio;
+    hr = Context->Callbacks->pfnSetPriorityCb(Context->RuntimeDevice, &args);
+    if (pResult != NULL) *pResult = hr;
+    return SUCCEEDED(hr) ? BC250_WINSYS_OK : Bc250WinsysRememberFailure(Context, hr);
 }
 
 BC250_WINSYS_STATUS Bc250WinsysMakeResident(

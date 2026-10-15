@@ -1782,3 +1782,34 @@ estado do POST medido (P0, Corridas 199/200): F32 HALT=1, `RB_ENABLE=0`, `SDMA1_
 | `SDMA1_GFX_DOORBELL` | `0x692` | `0x63C8` | `ENABLE`=0 |
 | `SDMA1_GFX_RB_WPTR_POLL_ADDR_HI/LO` | `0x6B2`/`0x6B3` | `0x6448`/`0x644C` | Work + 0 |
 | `SDMA1_GFX_MINOR_PTR_UPDATE` | `0x6B5` | `0x6454` | 1/0 em volta da escrita do WPTR |
+
+### DCN.1–DCN.3 e candidatos (P9, docs 710/713/714/715) — 2026-10-12
+
+Endereço: byte = (DMU_BASE.seg[2] 0x34C0 + mm) × 4, BASE_IDX 2. Fonte: `inc/linux_ref/dcn/dcn_2_0_3_offset.h`, salvo indicado.
+A janela mapeada pelo KMD hoje vai de 0xE000 a 0x15400: os dois candidatos abaixo dela e o `DC_GPIO_DDC1_MASK` acima exigem ampliar a janela.
+
+| Registrador | mm | Byte | Uso | Confiança | Escreve? |
+|---|---|---|---|---|---|
+| `mmOTG0_OTG_H_TOTAL` | `0x1B2A` | `0x13FA8` | timing medido (D04) | P0 lido | não |
+| `mmOTG0_OTG_V_TOTAL` | `0x1B2F` | `0x13FBC` | timing medido (D04) | P0 lido | não |
+| `mmOTG0_OTG_V_BLANK_START_END` | `0x1B36` | `0x13FD8` | timing; linha do VLINE0 | P0 lido | não |
+| `mmOTG0_OTG_STATUS_POSITION` | `0x1B4A` | `0x14028` | refresh pela varredura | P0 lido | não |
+| `mmOTG0_OTG_BLANK_CONTROL` | `0x1B42` | `0x14008` | DPMS (D08) | P0 | sim, DcnExt 0x10 |
+| `mmOTG0_OTG_GLOBAL_SYNC_STATUS` | `0x1B8A` | `0x14128` | IRQ VSTARTUP/VUPDATE (D06) | P0 escrita; não roteada | sim, DcnExt 0x01 |
+| `mmOTG0_OTG_VERTICAL_INTERRUPT0_POSITION` | `0x1B62` | `0x14088` | VLINE0 (D06) | P0 escrita | sim, DcnExt 0x01 |
+| `mmOTG0_OTG_VERTICAL_INTERRUPT0_CONTROL` | `0x1B63` | `0x1408C` | VLINE0 (D06) | P0 escrita; não roteada | sim, DcnExt 0x01 |
+| `mmOTG0_OTG_VSTARTUP_PARAM` | `0x1B87` | `0x1411C` | diagnóstico (0x0D na 273) | P0 lido | não |
+| `mmOTG0_OTG_CRC_CNTL` | `0x1B68` | `0x140A0` | CRC (D17) | P0; ⏸️ | sim, DcnExt 0x02 |
+| `mmHUBPREQ0_DCSURF_FLIP_CONTROL` | `0x061B` | `0x0EB6C` | flip DCN.1 (D02) | P0 | sim, DcnFlip |
+| `mmHUBPREQ0_DCSURF_SURFACE_FLIP_INTERRUPT` | `0x0620` | `0x0EB80` | IRQ de flip (D05) | P0, chega 1:1 | sim, DcnExt 0x01 |
+| `mmCURSOR0_0_CURSOR_CONTROL` | `0x0678` | `0x0ECE0` | cursor (D10) | P0 | sim, DcnExt 0x04 |
+| `mmCNVC_CUR0_CURSOR0_CONTROL` | `0x0CE0` | `0x10680` | cursor no DPP (D10) | P0 | sim, DcnExt 0x04 |
+| `mmFMT0_FMT_CONTROL` | `0x1840` | `0x13400` | dithering (0x1300 na 273) | P0 lido | não |
+| `mmFMT0_FMT_BIT_DEPTH_CONTROL` | `0x1841` | `0x13404` | dithering (0x921 na 273) | P0 lido | não |
+| `mmHPD0_DC_HPD_INT_STATUS` | `0x1F14` | `0x14F50` | HPD (D15) | P0 lido | não |
+| `mmDP_AUX0_AUX_CONTROL` | `0x1F50` | `0x15040` | AUX (D12) | P0; NON_AUX_MODE | sim, só na leitura do EDID |
+| `mmDP_AUX0_AUX_SW_STATUS` | `0x1F54` | `0x15050` | AUX (D12): 0x801 na 273 | P0 lido | não |
+| `mmDP_AUX0_AUX_DPHY_RX_CONTROL0` | `0x1F5A` | `0x15068` | AUX init (D12) | P0 escrita | sim, só na leitura do EDID |
+| `mmDC_GPIO_DDC1_MASK` | `0x28D0` | `0x17640` | pad do AUX0 em modo AUX (D12), candidato | P1 (hw_ddc.c) | ainda não |
+| `mmOTG0_INTERRUPT_DEST` (só em `dcn_2_0_0_offset.h`) | `0x0154` | `0x0D850` | roteamento das IRQ do OTG0 (D06), candidato | P1 do DCN 2.0; H no 2.0.3 | ainda não (ler primeiro) |
+| `mmDCHUB_INTERRUPT_DEST2` (só em `dcn_2_0_0_offset.h`) | `0x014F` | `0x0D83C` | roteamento do flip do HUBP0 (D05/D06), controle | P1 do DCN 2.0; H no 2.0.3 | ainda não (ler primeiro) |

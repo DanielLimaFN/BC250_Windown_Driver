@@ -179,6 +179,13 @@ class LogTail:
         self.tmr = []
         self.ih = ""
         self.c1 = "sem linha [C1_GFX_DOORBELL] ainda"
+        self.smu_mhz = None
+        self.smu_vid_mv = None
+        self.smu_ver = None
+        self.smu_if_ver = None
+        self.smu_feat = None
+        self.smu_pstate = None
+        self.smu_tgt_clk = None
 
     def poll(self):
         new = {"ib": 0, "present": 0, "tdr": 0, "fault": 0, "gfx": 0}
@@ -203,6 +210,41 @@ class LogTail:
             for line in text.splitlines():
                 if line.startswith("[C1_GFX_DOORBELL]"):
                     self.c1 = line[18:140]
+                elif line.startswith("[SMU1] GFXCLK="):
+                    try:
+                        self.smu_mhz = int(line.split("GFXCLK=")[1].split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                    if "VDDGFX=" in line:
+                        try:
+                            self.smu_vid_mv = int(line.split("VDDGFX=")[1].split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    if "SMU_VER=" in line:
+                        try:
+                            self.smu_ver = line.split("SMU_VER=")[1].split()[0]
+                        except (ValueError, IndexError):
+                            pass
+                    if "IF_VER=" in line:
+                        try:
+                            self.smu_if_ver = line.split("IF_VER=")[1].split()[0]
+                        except (ValueError, IndexError):
+                            pass
+                    if "FEAT=" in line:
+                        try:
+                            self.smu_feat = line.split("FEAT=")[1].split()[0]
+                        except (ValueError, IndexError):
+                            pass
+                    if "PSTATE=" in line:
+                        try:
+                            self.smu_pstate = int(line.split("PSTATE=")[1].split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    if "TARGET_CLK=" in line:
+                        try:
+                            self.smu_tgt_clk = int(line.split("TARGET_CLK=")[1].split()[0])
+                        except (ValueError, IndexError):
+                            pass
                 elif line.startswith("[TMR1]"):
                     self.tmr.append(line[:150])
                 elif line.startswith("[P3_IH] regime"):
@@ -267,7 +309,7 @@ def main():
         print(f"(sem elevacao: CSV em {path})")
     new_csv = csv.tell() == 0
     if new_csv:
-        csv.write("hora,cpu_pct,cpu_mhz,ram_gb,vram_dedicada_mb,gpu_compartilhada_mb,tctl_c,ib_s,present_s,fills,evicts,flush_tlb,tdr,fault,log_parado_s,gpu3d_pct,gpucopy_pct,gfx_s\n")
+        csv.write("hora,cpu_pct,cpu_mhz,ram_gb,vram_dedicada_mb,gpu_compartilhada_mb,tctl_c,ib_s,present_s,fills,evicts,flush_tlb,tdr,fault,log_parado_s,gpu3d_pct,gpucopy_pct,gfx_s,gpu_mhz,gpu_vid_mv,gpu_pstate,gpu_tgt_mhz\n")
     csv.write(f"# inicio {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     csv.flush()
     os.fsync(csv.fileno())
@@ -298,6 +340,22 @@ def main():
         if tctl is not None:
             tmax = tctl if tmax is None else max(tmax, tctl)
         eu = engine_util(g.get("eng_itens", []), our_luid(g.get("ded_itens", [])))
+        clk_parts = []
+        if log.smu_mhz is not None:
+            clk_parts.append(f"{log.smu_mhz} MHz")
+        if log.smu_tgt_clk is not None and log.smu_tgt_clk > 0:
+            clk_parts.append(f"TGT {log.smu_tgt_clk} MHz")
+        if log.smu_vid_mv is not None:
+            clk_parts.append(f"{log.smu_vid_mv} mV")
+        if log.smu_pstate is not None:
+            clk_parts.append(f"P-State {log.smu_pstate}")
+        if log.smu_ver is not None:
+            clk_parts.append(f"FW {log.smu_ver}")
+        if log.smu_if_ver is not None:
+            clk_parts.append(f"IF {log.smu_if_ver}")
+        if log.smu_feat is not None:
+            clk_parts.append(f"FEAT {log.smu_feat}")
+        clk_str = " | ".join(clk_parts) if clk_parts else "aguardando SMU..."
         os.system("cls")
         print(f"BC-250 | {time.strftime('%H:%M:%S')} | so' leitura (KMD + Windows)")
         print("-" * 72)
@@ -306,9 +364,9 @@ def main():
         print(f" VRAM  dedicada {g.get('ded', 0) / 2**20:7.1f} MB   compartilhada {g.get('shr', 0) / 2**20:7.1f} MB")
         print(f" Temp  Tctl {('%.1f C' % tctl) if tctl is not None else 'sem amostra'}  (max {('%.1f C' % tmax) if tmax is not None else '-'})   SDMA1 {tr.get('sdma1', '?')}")
         if eu:
-            print(f" GPU   uso 3D {eu.get('3D', 0.0):5.1f} %   Copy {eu.get('Copy', 0.0):5.1f} %   (Windows, pelo escalonamento)   clock: indisponivel (so' o SMU sabe)")
+            print(f" GPU   uso 3D {eu.get('3D', 0.0):5.1f} %   Copy {eu.get('Copy', 0.0):5.1f} %   (Windows, pelo escalonamento)   clock: {clk_str}")
         else:
-            print(" GPU   uso: - (adaptador BC-250 sem memoria dedicada em uso: driver fora?)   clock: indisponivel")
+            print(f" GPU   uso: - (adaptador BC-250 sem memoria dedicada em uso: driver fora?)   clock: {clk_str}")
         print("-" * 72)
         print(f" IBs/s {new['ib'] / dt:7.1f}   GFX/s {new['gfx'] / dt:6.1f}   Presents/s {new['present'] / dt:6.1f}   (total IB {log.tot['ib']}, GFX {log.tot['gfx']}, Present {log.tot['present']})")
         print(f" C1    {log.c1}")
@@ -326,7 +384,11 @@ def main():
             f"{tctl:.1f}" if tctl is not None else "", f"{new['ib'] / dt:.1f}", f"{new['present'] / dt:.1f}",
             pg.get("fill_count", ""), pg.get("evict_count", ""), pg.get("flush_tlb_count", ""),
             log.tot["tdr"], log.tot["fault"], f"{stale:.0f}",
-            f"{eu.get('3D', 0.0):.1f}", f"{eu.get('Copy', 0.0):.1f}", f"{new['gfx'] / dt:.1f}")) + "\n")
+            f"{eu.get('3D', 0.0):.1f}", f"{eu.get('Copy', 0.0):.1f}", f"{new['gfx'] / dt:.1f}",
+            f"{log.smu_mhz}" if log.smu_mhz is not None else "",
+            f"{log.smu_vid_mv}" if log.smu_vid_mv is not None else "",
+            f"{log.smu_pstate}" if log.smu_pstate is not None else "",
+            f"{log.smu_tgt_clk}" if log.smu_tgt_clk is not None else "")) + "\n")
         csv.flush()
         os.fsync(csv.fileno())
 

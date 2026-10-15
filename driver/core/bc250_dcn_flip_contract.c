@@ -125,3 +125,8 @@ uint32_t Bc250DcnRefreshMilliHz(uint32_t Frames, uint64_t ElapsedMicroseconds)
     if (ElapsedMicroseconds == 0ull) return 0u;
     return (uint32_t)(((uint64_t)Frames * 1000000000ull) / ElapsedMicroseconds);
 }
+
+int Bc250DcnFlipLatchIsViaIrq(int FlipIrqDpcPendingConsumed, int LatchDetectedThisCall)
+{
+    return (FlipIrqDpcPendingConsumed != 0 && LatchDetectedThisCall != 0) ? 1 : 0;
+}

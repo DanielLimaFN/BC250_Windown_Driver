@@ -81,16 +81,33 @@ static int Bc250RunDcnExtContractTest(void)
         CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_COLOR, 2u, 2u, 8u, color, g_Cursor) == 1, "cor");
         CHECK(g_Cursor[0] == 0x44332211u && g_Cursor[1] == 0x88776655u &&
             g_Cursor[64] == 0xCCBBAA99u && g_Cursor[65] == 0x01FFEEDDu && g_Cursor[2] == 0u, "ARGB copiado");
-        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_MONOCHROME, 4u, 2u, 1u, mono, g_Cursor) == 1, "mono");
+        /* 4x2 sem inversao: AND 1010/0101, XOR 0000/0010 (pitch 1). */
+        static const uint8_t monoOk[4] = { 0xA0, 0x50, 0x00, 0x20 };
+        /* cor mascarada 3x1: substitui, XOR com 0 (transparente), XOR com cor. */
+        static const uint8_t masked[12] = {
+            0x10, 0x20, 0x30, 0x00,  0x00, 0x00, 0x00, 0xFF,  0x01, 0x02, 0x03, 0xFF };
+        static const uint8_t maskedBad[4] = { 0x10, 0x20, 0x30, 0x80 };
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_MONOCHROME, 4u, 2u, 1u, monoOk, g_Cursor) == BC250_DCN_CURSOR_OK, "mono");
         /* linha 0: AND 1010, XOR 0000 -> transp, preto, transp, preto */
         CHECK(g_Cursor[0] == 0u && g_Cursor[1] == 0xFF000000u && g_Cursor[2] == 0u &&
             g_Cursor[3] == 0xFF000000u, "mono linha 0");
-        /* linha 1: AND 0101, XOR 0011 -> preto, transp, branco, inverter->branco */
+        /* linha 1: AND 0101, XOR 0010 -> preto, transp, branco, transp */
         CHECK(g_Cursor[64] == 0xFF000000u && g_Cursor[65] == 0u && g_Cursor[66] == 0xFFFFFFFFu &&
-            g_Cursor[67] == 0xFFFFFFFFu, "mono linha 1");
-        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_COLOR, 65u, 2u, 260u, color, g_Cursor) == 0, "65 px recusa");
-        CHECK(Bc250DcnCursorConvert(0x4u, 2u, 2u, 8u, color, g_Cursor) == 0, "masked color recusa");
-        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_COLOR, 2u, 2u, 4u, color, g_Cursor) == 0, "pitch curto recusa");
+            g_Cursor[67] == 0u, "mono linha 1");
+        /* O XOR fica nas linhas Height..2*Height-1 (VBoxMPWddm.cpp): a linha 2 do
+         * buffer e' o XOR da linha 0, nao a AND de uma 3a linha. */
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_MONOCHROME, 4u, 2u, 1u, mono, g_Cursor) == BC250_DCN_CURSOR_NEEDS_XOR,
+            "mono com inversao fica no software");
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_MASKED_COLOR, 2u, 1u, 8u, masked, g_Cursor) == BC250_DCN_CURSOR_OK,
+            "mascarada sem XOR de cor");
+        CHECK(g_Cursor[0] == 0xFF302010u && g_Cursor[1] == 0u, "mascarada: opaco e transparente");
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_MASKED_COLOR, 3u, 1u, 12u, masked, g_Cursor) == BC250_DCN_CURSOR_NEEDS_XOR,
+            "mascarada com XOR de cor fica no software");
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_MASKED_COLOR, 1u, 1u, 4u, maskedBad, g_Cursor) == BC250_DCN_CURSOR_REFUSED,
+            "mascara fora de 0/0xFF recusa");
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_COLOR, 65u, 2u, 260u, color, g_Cursor) == BC250_DCN_CURSOR_REFUSED, "65 px recusa");
+        CHECK(Bc250DcnCursorConvert(0x8u, 2u, 2u, 8u, color, g_Cursor) == BC250_DCN_CURSOR_REFUSED, "flag desconhecida recusa");
+        CHECK(Bc250DcnCursorConvert(BC250_DCN_POINTER_COLOR, 2u, 2u, 4u, color, g_Cursor) == BC250_DCN_CURSOR_REFUSED, "pitch curto recusa");
     }
     Bc250DcnCursorPosition(100, 200, 1u, 32u, 32u, 2560u, 1080u, &pos);
     CHECK(pos.Enable == 1u && pos.PositionReg == ((100u << 16) | 200u) && pos.HotSpotReg == 0u, "posicao");
@@ -122,6 +139,92 @@ static int Bc250RunDcnExtContractTest(void)
     CHECK(Bc250DcnAuxDecodeReply(0x2u) == BC250_AUX_REPLY_DEFER, "defer");
     CHECK(Bc250DcnAuxDecodeReply(0x4u) == BC250_AUX_REPLY_I2C_NACK, "i2c nack");
     CHECK(Bc250DcnAuxDecodeReply(0x8u) == BC250_AUX_REPLY_I2C_DEFER, "i2c defer");
+    /* dcn10_aux_initialize: HPD_SEL no campo [22:20], LS_READ_EN 0, janela 0. */
+    CHECK(Bc250DcnAuxInitControl(0x00000101u, 0u) == 0x00000001u, "aux init: LS_READ_EN 0, HPD 0");
+    CHECK(Bc250DcnAuxInitControl(0x00700001u, 1u) == 0x00100001u, "aux init: HPD 1");
+    CHECK(Bc250DcnAuxInitRxControl0(0x00000770u) == 0x00000070u, "aux init: janela 0");
+
+    /* DCN.3: fontes do cliente DCE (to_dal_irq_source_dcn201). */
+    CHECK(Bc250DcnIrqClassify(0x3Cu, 0u) == BC250_DCN_IRQ_VSTARTUP, "0x3C vstartup");
+    CHECK(Bc250DcnIrqClassify(0x57u, 0u) == BC250_DCN_IRQ_VUPDATE, "0x57 vupdate");
+    CHECK(Bc250DcnIrqClassify(0x1Eu, 6u) == BC250_DCN_IRQ_VLINE0, "0x1E/6 vline0");
+    CHECK(Bc250DcnIrqClassify(0x1Eu, 3u) == BC250_DCN_IRQ_NONE, "0x1E/3 (trigger A) nao e' vline0");
+    CHECK(Bc250DcnIrqClassify(0x4Fu, 0u) == BC250_DCN_IRQ_FLIP, "0x4F flip");
+    CHECK(Bc250DcnIrqClassify(0x50u, 0u) == BC250_DCN_IRQ_NONE, "0x50 flip do HUBP1 nao e' nosso");
+    /* VLINE0 no inicio do blank (1108 de 1111). */
+    CHECK(Bc250DcnVline0Position(1108u, 1111u) == ((1109u << 16) | 1108u), "vline0 1108");
+    CHECK(Bc250DcnVline0Position(1110u, 1111u) == 1110u, "vline0 na ultima linha: fim 0");
+    CHECK(Bc250DcnVline0Position(1111u, 1111u) == 0u, "vline0 fora recusa");
+
+    /* D06 (doc 716/718, so' leitura): decodificacao dos quatro bits de
+     * destino. Valores sinteticos cobrindo os quatro independentes e as
+     * combinacoes vistas no catalogo (todos ligados / todos desligados). */
+    {
+        BC250_DCN_IRQ_DEST dest;
+        Bc250DcnIrqDestDecode(0u, 0u, &dest);
+        CHECK(dest.VstartupDest == 0u && dest.VupdateNoLockDest == 0u &&
+              dest.Vline0Dest == 0u && dest.FlipDest == 0u, "tudo zero decodifica zero");
+        Bc250DcnIrqDestDecode(0x000902FFu, 1u, &dest);
+        CHECK(dest.VstartupDest == 1u, "bit 16 (VSTARTUP) isolado");
+        CHECK(dest.VupdateNoLockDest == 1u, "bit 19 (V_UPDATE_NO_LOCK) isolado");
+        CHECK(dest.Vline0Dest == 1u, "bit 9 (VERTICAL_INTERRUPT0) isolado");
+        CHECK(dest.FlipDest == 1u, "bit 0 do DCHUB_INTERRUPT_DEST2 isolado");
+        Bc250DcnIrqDestDecode(0xFFFFFFFFu, 0xFFFFFFFEu, &dest);
+        CHECK(dest.VstartupDest == 1u && dest.VupdateNoLockDest == 1u &&
+              dest.Vline0Dest == 1u && dest.FlipDest == 0u,
+              "flip isolado em 0 com o resto do OTG em 1 (o caso que importa: comparar flip contra os outros tres)");
+        /* Out == NULL nao pode crashar (falha fechada, sem escrever nada). */
+        Bc250DcnIrqDestDecode(0xFFFFFFFFu, 0xFFFFFFFFu, 0);
+    }
+
+    /* D12 (doc 716/718): Lei 6 no DC_GPIO_DDC1_MASK -- CLK/DATA MASK a 0,
+     * AUX_PAD1_MODE a 1, resto preservado. */
+    CHECK(Bc250DcnAuxPadHardwareModeValue(0u) == 0x00010000u, "registrador zerado: so' liga AUX_PAD1_MODE");
+    CHECK(Bc250DcnAuxPadHardwareModeValue(0xFFFFFFFFu) == 0xFFFFFEFEu,
+        "resto (MASK/PD_EN/RECV/STR/POL) preservado em 1; so' CLK_MASK e DATA_MASK (bits 0 e 8) vao a 0");
+    CHECK(Bc250DcnAuxPadHardwareModeValue(0x00140001u) == 0x00150000u,
+        "AUX_PAD1_MODE em 0 (DDC) e AUX1_POL em 1 preservado -- CLK_MASK (bit 0) zera, PAD (bit 16) liga, AUX1_POL continua");
+    CHECK(Bc250DcnAuxPadHardwareModeValue(0x00010101u) == 0x00010000u,
+        "ja em modo AUX (idempotente): CLK/DATA MASK zerados, PAD continua 1");
+    /* C09 (doc 765): os valores que o amdgpu escreveu nesta placa (rastro E03). */
+    CHECK(Bc250DcnAuxPadI2cModeOffValue(0x0003F55Au) == 0x0003E55Au,
+        "AUX_CTRL_5 do POST 0x0003F55A vira 0x0003E55A, como o Linux");
+    CHECK(Bc250DcnAuxPadI2cModeOffValue(0x0003E55Au) == 0x0003E55Au, "idempotente");
+    CHECK(Bc250DcnAuxPadI2cModeOffValue(0xFFFFFFFFu) == 0xFFFFEFFFu, "so' o bit 12 muda");
+
+    /* D19 (doc 716/720): so' diminuir refresh (aumentar V_TOTAL); numeros da
+     * 271/273 (V_TOTAL=1111, ~60 Hz). */
+    {
+        uint32_t newVTotal = 0xFFFFFFFFu;
+        uint32_t r = Bc250DcnComputeVTotalForRefresh(1111u, 60000u, 50000u, &newVTotal);
+        CHECK(r == 0u, "60->50 Hz aceita");
+        CHECK(newVTotal == 1333u, "1111*60000/50000 = 1333,2 -> 1333 arredondado");
+        r = Bc250DcnComputeVTotalForRefresh(1111u, 60000u, 60000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_NOT_LOWER, "mesmo refresh recusa (so' diminuir)");
+        r = Bc250DcnComputeVTotalForRefresh(1111u, 60000u, 70000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_NOT_LOWER, "aumentar refresh recusa (encolheria o front porch)");
+        r = Bc250DcnComputeVTotalForRefresh(1111u, 60000u, 10000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_RANGE, "10 Hz fora de [24,240] recusa");
+        r = Bc250DcnComputeVTotalForRefresh(1111u, 60000u, 250000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_RANGE, "250 Hz fora de [24,240] recusa");
+        r = Bc250DcnComputeVTotalForRefresh(0u, 60000u, 50000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_INPUT, "VTotal atual zero recusa");
+        r = Bc250DcnComputeVTotalForRefresh(1111u, 0u, 50000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_INPUT, "refresh atual zero recusa");
+        r = Bc250DcnComputeVTotalForRefresh(0x7FFEu, 60000u, 24000u, &newVTotal);
+        CHECK(r == BC250_DCN_VTOTAL_REFUSE_OVERFLOW, "V_TOTAL novo nao cabe em 15 bits recusa");
+        r = Bc250DcnComputeVTotalForRefresh(1111u, 60000u, 59940u, &newVTotal);
+        CHECK(r == 0u && newVTotal == 1112u, "60 -> 59,94 Hz (estilo NTSC): 1 linha extra");
+    }
+
+    /* D19b (doc 723/724): elapsed em ms, pura, fail-safe. */
+    CHECK(Bc250DcnElapsedMs(0, 10000000, 10000000) == 1000u, "1x a frequencia = 1000 ms");
+    CHECK(Bc250DcnElapsedMs(0, 2000000, 10000000) == 200u, "200 ms (uma chamada de Bc250Dcn2MeasureTiming)");
+    CHECK(Bc250DcnElapsedMs(0, 4000000, 10000000) == 400u, "400 ms (as duas chamadas da prova de D19)");
+    CHECK(Bc250DcnElapsedMs(100, 50, 10000000) == 0u, "Now antes de Start: 0, nunca negativo");
+    CHECK(Bc250DcnElapsedMs(0, 1000, 0) == 0u, "frequencia zero: 0, nunca divide por zero");
+    CHECK(Bc250DcnElapsedMs(0, 1000, -1) == 0u, "frequencia negativa: 0");
+    CHECK(Bc250DcnElapsedMs(1000000000000LL, 1000000000000LL, 10000000) == 0u, "Start==Now: 0");
     return 0;
 }
 

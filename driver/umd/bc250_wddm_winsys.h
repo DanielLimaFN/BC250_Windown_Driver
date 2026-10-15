@@ -226,6 +226,13 @@ BC250_WINSYS_STATUS Bc250WinsysEvict(
     BC250_WINSYS_CONTEXT *Context,
     BC250_WINSYS_ALLOCATION *Allocation);
 
+/* RES.1 (doc 762): prioridade de residencia da alocacao (pfnSetPriorityCb). */
+BC250_WINSYS_STATUS Bc250WinsysSetPriority(
+    BC250_WINSYS_CONTEXT *Context,
+    const BC250_WINSYS_ALLOCATION *Allocation,
+    UINT Priority,
+    HRESULT *pResult);
+
 BOOL Bc250WinsysAllocationIsPrimary(
     const BC250_WINSYS_ALLOCATION *Allocation);
 
@@ -313,6 +320,27 @@ void Bc250WinsysTraceRaw(const char *Message);
 UINT64 Bc250WinsysHangSpan(void);
 void Bc250WinsysHangEvent(const char *Operation, const char *Phase,
     const void *Owner, UINT64 Span, UINT64 A, UINT64 B, HRESULT Result);
+
+/*
+ * FRAME1 (Corrida 301, doc 762): para onde vai o tempo de cada quadro, por
+ * processo, sempre ligado (nao depende do HangTrace). Uma linha [FRAME1] a
+ * cada ~2 s de Presents. Criar/destruir/paginacao/Present saem dos mesmos
+ * pontos do BC250_HANG; desenho, Map e flush entram pelas chamadas abaixo.
+ */
+typedef enum BC250_FRAME1_CATEGORY {
+    BC250_FRAME1_CREATE = 0,
+    BC250_FRAME1_DESTROY = 1,
+    BC250_FRAME1_PAGING = 2,
+    BC250_FRAME1_PRESENT = 3,
+    BC250_FRAME1_FLUSH_SUBMIT = 4,
+    BC250_FRAME1_FLUSH_GPU_WAIT = 5,
+    BC250_FRAME1_DRAW = 6,
+    BC250_FRAME1_MAP = 7,
+    BC250_FRAME1_COUNT = 8
+} BC250_FRAME1_CATEGORY;
+UINT64 Bc250WinsysFrame1Now(void);
+void Bc250WinsysFrame1Add(BC250_FRAME1_CATEGORY Category, UINT64 QpcTicks);
+void Bc250WinsysFrame1AddMicros(BC250_FRAME1_CATEGORY Category, UINT64 Micros);
 
 #ifdef __cplusplus
 }

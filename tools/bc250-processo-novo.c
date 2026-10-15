@@ -34,10 +34,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <math.h>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
 
 #define BC250_VENDOR_ID 0x1002u
 #define BC250_DEVICE_ID 0x13FEu
@@ -51,6 +54,7 @@ typedef struct {
     int mb;
     int segurarMs;
     int clear;
+    int janela;
     int timeoutFilhoS;
     int qualquerAdaptador;
     int ciclo;
@@ -116,11 +120,13 @@ static int LerArgs(int argc, wchar_t **argv)
 {
     int i;
     memset(&g_op, 0, sizeof(g_op));
-    g_op.ciclos = 120;
-    g_op.intervaloMs = 5000;
-    g_op.texturas = 4;
-    g_op.mb = 8;
-    g_op.segurarMs = 500;
+    g_op.ciclos = 90;
+    g_op.intervaloMs = 1000;
+    g_op.texturas = 2;
+    g_op.mb = 16;
+    g_op.segurarMs = 3000;
+    g_op.clear = 1;
+    g_op.janela = 1;
     g_op.timeoutFilhoS = 60;
     wcscpy_s(g_op.log, MAX_PATH, L"C:\\BC250_PROCESSO_NOVO.log");
 
@@ -129,6 +135,8 @@ static int LerArgs(int argc, wchar_t **argv)
         int ok = 1;
         if (wcscmp(a, L"--filho") == 0) g_op.filho = 1;
         else if (wcscmp(a, L"--clear") == 0) g_op.clear = 1;
+        else if (wcscmp(a, L"--janela") == 0) ok = LerInt(argc, argv, &i, &g_op.janela);
+        else if (wcscmp(a, L"--sem-janela") == 0) g_op.janela = 0;
         else if (wcscmp(a, L"--qualquer-adaptador") == 0) g_op.qualquerAdaptador = 1;
         else if (wcscmp(a, L"--ciclos") == 0) ok = LerInt(argc, argv, &i, &g_op.ciclos);
         else if (wcscmp(a, L"--intervalo-ms") == 0) ok = LerInt(argc, argv, &i, &g_op.intervaloMs);
@@ -225,6 +233,80 @@ static int RodarFilho(void)
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 
+    ID3D11RenderTargetView *rtv[MAX_TEXTURAS];
+    HWND hWnd = NULL;
+    IDXGIFactory *factory = NULL;
+    IDXGISwapChain *swapChain = NULL;
+    ID3D11RenderTargetView *swapRtv = NULL;
+    memset(rtv, 0, sizeof(rtv));
+
+    /* 1. Criar Janela e SwapChain PRIMEIRO, antes de qualquer textura de estresse */
+    if (g_op.janela && adapter != NULL) {
+        WNDCLASSA wc;
+        memset(&wc, 0, sizeof(wc));
+        wc.style = CS_HREDRAW | CS_VREDRAW;
+        wc.lpfnWndProc = DefWindowProcA;
+        wc.hInstance = GetModuleHandle(NULL);
+        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        wc.lpszClassName = "BC250_StressWindow";
+        RegisterClassA(&wc);
+
+        char title[128];
+        _snprintf_s(title, sizeof(title), _TRUNCATE,
+            "BC-250 3D GPU Stress [Ciclo %d] - 60 FPS", g_op.ciclo);
+        hWnd = CreateWindowA("BC250_StressWindow", title,
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+            120 + ((g_op.ciclo * 45) % 640), 80 + ((g_op.ciclo * 35) % 380),
+            480, 320,
+            NULL, NULL, GetModuleHandle(NULL), NULL);
+
+        if (hWnd != NULL) {
+            ShowWindow(hWnd, SW_SHOW);
+            UpdateWindow(hWnd);
+
+            hr = IDXGIAdapter_GetParent(adapter, &IID_IDXGIFactory, (void **)&factory);
+            if (SUCCEEDED(hr) && factory != NULL) {
+                DXGI_SWAP_CHAIN_DESC scd;
+                memset(&scd, 0, sizeof(scd));
+                scd.BufferCount = 1;
+                scd.BufferDesc.Width = 480;
+                scd.BufferDesc.Height = 320;
+                scd.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                scd.BufferDesc.RefreshRate.Numerator = 60;
+                scd.BufferDesc.RefreshRate.Denominator = 1;
+                scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+                scd.OutputWindow = hWnd;
+                scd.SampleDesc.Count = 1;
+                scd.Windowed = TRUE;
+                scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+                hr = IDXGIFactory_CreateSwapChain(factory, (IUnknown *)device, &scd, &swapChain);
+                if (SUCCEEDED(hr) && swapChain != NULL) {
+                    ID3D11Texture2D *bb = NULL;
+                    hr = IDXGISwapChain_GetBuffer(swapChain, 0, &IID_ID3D11Texture2D, (void **)&bb);
+                    if (SUCCEEDED(hr) && bb != NULL) {
+                        hr = ID3D11Device_CreateRenderTargetView(device, (ID3D11Resource *)bb, NULL, &swapRtv);
+                        LogLinha("SWAPCHAIN criado: bb=%p swapRtv=%p hr=0x%08lX", bb, swapRtv, (unsigned long)hr);
+                        ID3D11Texture2D_Release(bb);
+                    }
+                } else {
+                    LogLinha("SWAPCHAIN FALHOU hr=0x%08lX", (unsigned long)hr);
+                }
+            }
+        }
+    }
+
+    /* 2. Alocar texturas de estresse offscreen na VRAM */
+    memset(&desc, 0, sizeof(desc));
+    desc.Width = 1024;
+    desc.Height = (UINT)g_op.mb * 256u; /* 1024 x (mb*256) x 4 bytes = mb MiB */
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+
     for (i = 0; i < g_op.texturas; ++i) {
         hr = ID3D11Device_CreateTexture2D(device, &desc, NULL, &tex[i]);
         if (FAILED(hr)) {
@@ -236,24 +318,93 @@ static int RodarFilho(void)
         }
         ++criadas;
         if (g_op.clear) {
-            ID3D11RenderTargetView *rtv = NULL;
-            static const FLOAT cor[4] = { 0.25f, 0.5f, 0.75f, 1.0f };
-            hr = ID3D11Device_CreateRenderTargetView(device, (ID3D11Resource *)tex[i], NULL, &rtv);
-            if (SUCCEEDED(hr)) {
-                ID3D11DeviceContext_ClearRenderTargetView(context, rtv, cor);
-                ID3D11RenderTargetView_Release(rtv);
-            } else {
+            hr = ID3D11Device_CreateRenderTargetView(device, (ID3D11Resource *)tex[i], NULL, &rtv[i]);
+            if (FAILED(hr)) {
                 LogLinha("RTV da textura %d FALHOU hr=0x%08lX", i + 1, (unsigned long)hr);
+                rtv[i] = NULL;
             }
         }
     }
     ID3D11DeviceContext_Flush(context);
-    LogLinha("ALOCADAS %d/%d texturas de %d MB (falhas=%d)", criadas, g_op.texturas, g_op.mb, falhas);
+    LogLinha("ALOCADAS %d/%d texturas de %d MB (falhas=%d, total=%d MB)",
+        criadas, g_op.texturas, g_op.mb, falhas, criadas * g_op.mb);
     LogMemoria(adapter, "depois");
 
-    if (g_op.segurarMs > 0) Sleep((DWORD)g_op.segurarMs);
+    /* 3. Loop de Renderizacao / Apresentacao / Animacao */
+    if (g_op.clear && (criadas > 0 || swapRtv != NULL)) {
+        int frames = (g_op.segurarMs > 0) ? (g_op.segurarMs / 16) : 1;
+        int f;
+        if (frames < 1) frames = 1;
+        for (f = 0; f < frames; ++f) {
+            FLOAT cor[4];
+            float rad = (float)f * 0.05f;
+            cor[0] = 0.5f + 0.5f * (float)sin(rad);
+            cor[1] = 0.5f + 0.5f * (float)sin(rad + 2.094f);
+            cor[2] = 0.5f + 0.5f * (float)sin(rad + 4.188f);
+            cor[3] = 1.0f;
+
+            if (swapRtv != NULL) {
+                ID3D11DeviceContext_ClearRenderTargetView(context, swapRtv, cor);
+            }
+            for (i = 0; i < criadas; ++i) {
+                if (rtv[i] != NULL) {
+                    ID3D11DeviceContext_ClearRenderTargetView(context, rtv[i], cor);
+                }
+            }
+            ID3D11DeviceContext_Flush(context);
+
+            if (swapChain != NULL) {
+                IDXGISwapChain_Present(swapChain, 1, 0);
+            }
+
+            if (hWnd != NULL) {
+                MSG msg;
+                while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessageA(&msg);
+                }
+
+                HDC hdc = GetDC(hWnd);
+                if (hdc != NULL) {
+                    RECT rc;
+                    GetClientRect(hWnd, &rc);
+                    COLORREF cr = RGB((int)(cor[0] * 255.0f), (int)(cor[1] * 255.0f), (int)(cor[2] * 255.0f));
+                    HBRUSH br = CreateSolidBrush(cr);
+                    if (br != NULL) {
+                        FillRect(hdc, &rc, br);
+                        DeleteObject(br);
+                    }
+                    SetBkMode(hdc, TRANSPARENT);
+                    SetTextColor(hdc, RGB(255, 255, 255));
+                    char txt[128];
+                    _snprintf_s(txt, sizeof(txt), _TRUNCATE,
+                        "BC-250 3D GPU STRESS | Ciclo %d | Frame %d/%d (60 FPS)",
+                        g_op.ciclo, f + 1, frames);
+                    TextOutA(hdc, 20, 20, txt, (int)strlen(txt));
+                    ReleaseDC(hWnd, hdc);
+                }
+
+                if ((f % 30) == 0) {
+                    char ftitle[128];
+                    _snprintf_s(ftitle, sizeof(ftitle), _TRUNCATE,
+                        "BC-250 3D Stress [Ciclo %d - Frame %d/%d (60 FPS)]", g_op.ciclo, f + 1, frames);
+                    SetWindowTextA(hWnd, ftitle);
+                }
+            }
+            if (g_op.segurarMs > 0 && f + 1 < frames) Sleep(16);
+        }
+        LogLinha("GPU CARGA: %d quadros renderizados e apresentados na tela (3D Clear+Flush+Present)", frames);
+    } else if (g_op.segurarMs > 0) {
+        Sleep((DWORD)g_op.segurarMs);
+    }
+
+    if (swapRtv != NULL) ID3D11RenderTargetView_Release(swapRtv);
+    if (swapChain != NULL) IDXGISwapChain_Release(swapChain);
+    if (factory != NULL) IDXGIFactory_Release(factory);
+    if (hWnd != NULL) DestroyWindow(hWnd);
 
     for (i = 0; i < MAX_TEXTURAS; ++i) {
+        if (rtv[i] != NULL) ID3D11RenderTargetView_Release(rtv[i]);
         if (tex[i] != NULL) ID3D11Texture2D_Release(tex[i]);
     }
     ID3D11DeviceContext_Flush(context);
@@ -291,9 +442,10 @@ static int RodarPai(void)
         ULONGLONG t0;
 
         swprintf_s(cmd, 2048,
-            L"\"%ls\" --filho --sessao %ls --ciclo %d --texturas %d --mb %d --segurar-ms %d --log \"%ls\"%ls%ls",
+            L"\"%ls\" --filho --sessao %ls --ciclo %d --texturas %d --mb %d --segurar-ms %d --log \"%ls\"%ls%ls%ls",
             exe, g_op.sessao, c, g_op.texturas, g_op.mb, g_op.segurarMs, g_op.log,
             g_op.clear ? L" --clear" : L"",
+            g_op.janela ? L" --janela 1" : L" --sem-janela",
             g_op.qualquerAdaptador ? L" --qualquer-adaptador" : L"");
         memset(&si, 0, sizeof(si));
         si.cb = sizeof(si);

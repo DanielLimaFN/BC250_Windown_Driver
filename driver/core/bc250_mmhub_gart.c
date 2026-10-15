@@ -167,7 +167,7 @@ BC250_GCVM_GLOBAL_MMU_STATUS Bc250MmhubGartProgram(
     planned[1] = (uint32_t)(Config->TablePa >> 32);
     planned[2] = 0u;                                                   /* gart_start >> 12 */
     planned[3] = 0u;                                                   /* gart_start >> 44 */
-    planned[4] = (uint32_t)((BC250_GCVM_GART_BYTES - 1ull) >> 12);     /* gart_end >> 12 */
+    planned[4] = (uint32_t)((BC250_MMHUB_GART_BYTES - 1ull) >> 12);    /* gart_end >> 12 (2 MB, COMP.VA.3) */
     planned[5] = 0u;                                                   /* gart_end >> 44 */
     planned[6] = 0u;                                /* AGP_BASE */
     planned[7] = 0x00FFFFFFu;                       /* AGP_BOT: agp_start = 0xFFFFFFFFFFFF >> 24 (AGP desligada) */

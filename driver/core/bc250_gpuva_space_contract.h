@@ -66,7 +66,12 @@ extern "C" {
  * o pior caso do commit; com 4096 nos dois seriam ~500 ms. Custo estatico:
  * ~440 KiB por espaco, quatro no contexto ativo. NAO VALIDADO EM HARDWARE.
  */
-#define BC250_GPUVA_SPACE_MAX_RANGES 4096u
+/*
+ * GPUVA.4 (Corrida 289): expandido para 8192 faixas ativas por espaco.
+ * Na Corrida 288 com carga 3D, 4096 slots esgotaram-se (Mapped=4086, Livres=10),
+ * gerando falhas de insercao no journal ao encerrar o processo.
+ */
+#define BC250_GPUVA_SPACE_MAX_RANGES 8192u
 #define BC250_GPUVA_PAGE_BYTES 4096ull
 #define BC250_GPUVA_PAGE_MASK (BC250_GPUVA_PAGE_BYTES - 1ull)
 /*

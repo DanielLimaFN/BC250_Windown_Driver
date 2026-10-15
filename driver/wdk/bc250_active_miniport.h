@@ -21,6 +21,8 @@
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
 #include "../core/bc250_gfx_ring_transaction.h"
+#include "../core/bc250_c01_init_parity.h"
+#include "../core/bc250_dpm_contract.h"
 #include "../core/bc250_vram_allocator.h"
 #include "../core/bc250_mcdm_object_contract.h"
 #include "../core/bc250_gpuva_space_contract.h"
@@ -258,7 +260,7 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t Vmid0SemAcquired;
 } BC250_PFP_DIRECT_LOAD_EVIDENCE;
 
-#define BC250_ACTIVE_GPUVA_JOURNAL_SLOTS 4u
+#define BC250_ACTIVE_GPUVA_JOURNAL_SLOTS 16u
 
 /* Motor grafico persistente (CP_RB0 / PFP / ME) no Node 1 (3D Graphics) */
 typedef struct BC250_GFX_ENGINE {
@@ -317,6 +319,13 @@ typedef struct BC250_GFX_ENGINE {
 
     uint64_t FenceGpuVa;
     volatile uint32_t *FenceCpuVirtual;
+
+    /* GFXRST.2 (doc 759): o CSB do boot, reemitido no restart do TDR como o
+     * gfx_v10_0_cp_gfx_start do amdgpu. CsbCpu aponta para dentro de
+     * VramCpuMapped e some com ele. */
+    uint64_t CsbMc;
+    uint32_t CsbDwords;
+    uint32_t *CsbCpu;
 
     /* Cursores de hardware e fences */
     uint32_t WptrDwords;
@@ -377,6 +386,13 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG D2GartProgrammed;
     /* Corrida 215: mapeamento UC da tabela mantido para a foto no TDR. */
     volatile uint64_t *D2GartTableCpu;
+    /* COMP.VA.3 (doc 745): onde a tabela de 64 KB mora (reserva no alocador). */
+    uint64_t D2GartTableOffset;
+    BC250_VRAM_TOKEN D2GartTableToken;
+    BOOLEAN D2GartTableReserved;
+    /* COMP.VA.3c (doc 747): a mesma faixa reservada no alocador do bootstrap. */
+    BC250_VRAM_TOKEN D2GartTableMirrorToken;
+    BOOLEAN D2GartTableMirrored;
     uint64_t D2GartExpected[4]; /* PTE[anel..anel+3] (V0.1: entradas 32..35) */
     volatile LONG D2GartFotoTimeouts;
     /* V0.1 (doc 589): o MEC usa a tabela da GART em vez da dele. */
@@ -408,11 +424,36 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG GfxRst1MecHalted;
     uint32_t GfxRst1MecCntlBefore;
     volatile LONG GfxRst1Count;
+    volatile LONG C05WaveKills;      /* C05 (doc 764): wave kills no quiesce do TDR do GFX */
+    volatile LONG C05WaveKillIdle;   /* ... dos quais o GFX ficou ocioso em 10 ms */
+    /* GFXRST.2 (doc 759): escada do restart do GFX no TDR. */
+    volatile LONG GfxRst2Count;
+    /* CLK.1 (doc 762): clock do GFX pedido a SMU; o alvo original volta no StopDevice. */
+    uint32_t Clk1OriginalTargetMhz;
+    /* C08 / DPM.1 (doc 765): governador de clock pela carga com teto termico. */
+    PVOID Dpm1Thread;            /* PETHREAD referenciado */
+    KEVENT Dpm1StopEvent;
+    volatile LONG Dpm1Running;
+    BC250_DPM_STATE Dpm1State;
+    uint32_t Dpm1OriginalTargetMhz;
+    volatile LONG Dpm1Transitions;
+    volatile LONG Dpm1SmuFailures;
+    volatile LONG Dpm1Mismatches;
+    uint32_t Dpm1MaxSeenMhz;
+    uint32_t Dpm1MaxTctlMilliC;
+    volatile LONG Clk1Applied;
     /* G.1 (doc 645): golden settings do Cyan Skillfish, como gfx_v10_0_init_golden_registers. */
 #define BC250_G1_GOLDEN_MAX 34u
     volatile LONG G1Armed;
     uint64_t G1AppliedMask;
     uint32_t G1Original[BC250_G1_GOLDEN_MAX];
+    /* C01 (doc 764): paridade de init com o rastro do amdgpu nesta placa. */
+    volatile LONG C01Armed;
+    uint32_t C01ShMemDone;                               /* bit v: VMID v gravada e conferida */
+    uint32_t C01OrigShMemConfig[BC250_C01_VMID_COUNT];
+    uint32_t C01OrigShMemBases[BC250_C01_VMID_COUNT];
+    uint32_t C01OrigPlain[BC250_C01_PLAIN_COUNT];
+    UCHAR C01PlainDone[BC250_C01_PLAIN_COUNT];
     /* P4.1 (doc 620): SDMA1 vivo e ocioso. */
     BC250_PSP_LOAD_FW_STATUS P4Sdma1FwStatus;
     BC250_PSP_LOAD_FW_EVIDENCE P4Sdma1FwEvidence;
@@ -675,7 +716,7 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
      * recusa resolve-la (vai para a caminhada) ate um UpdatePageTable
      * posterior encenar a faixa inteira com sucesso.
      */
-#define BC250_ACTIVE_JOURNAL_TAINT_SLOTS 16u
+#define BC250_ACTIVE_JOURNAL_TAINT_SLOTS 64u
     KSPIN_LOCK JournalTaintLock;
     struct {
         BC250_MCDM_HANDLE Process;
@@ -892,7 +933,18 @@ void Bc250ActiveSdmaRetirementTimerStop(
 
 /* Portao testavel usado por SubmitCommandVirtual e pela corrida Stop/Submit. */
 /* D2 por GART (doc 587): tabela da VMID 0 na VRAM privada; V0.1: 0..31 = MEC. */
-#define BC250_D2_GART_TABLE_VRAM_OFFSET 0x0FF02000ull
+/*
+ * COMP.VA.3 (doc 745): a tabela da GART cresceu de 4 KB para 64 KB e saiu da
+ * pagina 2 da reserva do SDMA (0x0FF02000) para uma reserva propria no
+ * alocador, de preferencia neste offset, que estava livre no mapa DX.67 da
+ * Corrida 291 (0x0FF05000..0x0FF80000). Se o offset estiver ocupado, a tabela
+ * vai para onde o alocador der (TOP_DOWN, 64 KB); o offset real fica em
+ * Context->D2GartTableOffset e e' o unico que o codigo usa.
+ */
+/* COMP.VA.3b (doc 746): inicio da varredura (logo abaixo do topo reservado: TMR, firmware, MQD, aneis) e piso; o corte DX.67 tira a fatia do segmento do VidMm. */
+#define BC250_D2_GART_TABLE_VRAM_OFFSET 0x0F3F0000ull
+#define BC250_D2_GART_TABLE_SCAN_FLOOR  0x0E000000ull
+#define BC250_D2_GART_TABLE_BYTES ((uint64_t)BC250_GCVM_GART_ENTRIES * sizeof(uint64_t))
 #define BC250_D2_GART_MEC_ENTRIES       32u
 
 /*

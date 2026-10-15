@@ -409,6 +409,19 @@ typedef BOOLEAN (*BC250_MCDM_PLATFORM_PROBE)(
 VOID Bc250McdmInstallPlatformProbe(
     _In_opt_ BC250_MCDM_PLATFORM_PROBE Probe);
 
+/* SMU.1/SMU.2/SMU.3/SMU.4: Consulta periodica do clock GFX (Msg 0x37), tensao VDDGFX (Msg 0x38), versao FW (Msg 0x02), versao IF (Msg 0x03), features (Msg 0x3D), P-State (Msg 0x0C) e Target Gfxclk (Msg 0x0F) */
+typedef BOOLEAN (*BC250_MCDM_SMU_CLOCK_PROBE)(
+    _Out_ UINT32 *GfxclkMhz,
+    _Out_opt_ UINT32 *GfxVidMv,
+    _Out_opt_ UINT32 *SmuVersion,
+    _Out_opt_ UINT32 *DriverIfVer,
+    _Out_opt_ UINT32 *Features,
+    _Out_opt_ UINT32 *CorePstate,
+    _Out_opt_ UINT32 *TargetGfxclk);
+
+VOID Bc250McdmInstallSmuClockProbe(
+    _In_opt_ BC250_MCDM_SMU_CLOCK_PROBE Probe);
+
 /*
  * I.SDMA0 / I.CG (doc 556): duas amostras SOMENTE LEITURA no rastro.
  * Motivo: na Corrida 199 a ultima operacao do KMD foi um FILL de 11 MB no

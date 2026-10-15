@@ -192,8 +192,19 @@ uint32_t Bc250GcvmAgpSystemPaToMc(
 #define BC250_REG_GCVM_CONTEXT0_PT_END_HI   0x0000A4B0u
 #define BC250_GCVM_GART_REG_COUNT           7u
 
-#define BC250_GCVM_GART_BYTES    (2ull << 20)
-#define BC250_GCVM_GART_ENTRIES  512u
+/*
+ * COMP.VA.3 (doc 745): GART do GFXHUB de 32 MB (8.192 entradas, tabela de
+ * 64 KB), para a janela de transferencia da composicao caber a tela inteira
+ * (2.700 paginas de 2560x1080x4) numa copia so'. O amdgpu usa 512 MB a partir
+ * de MC 0 neste chip (coleta L-B). As entradas 0..511 seguem com o mesmo mapa
+ * (MEC, D2, P7, IH, SDMA1); a janela da composicao ocupa 512..8191.
+ * O MMHUB continua com 2 MB (BC250_MMHUB_GART_BYTES): ele so' precisa do IH e
+ * a faixa maior cobriria enderecos fisicos baixos de outros clientes dele.
+ */
+#define BC250_GCVM_GART_BYTES    (32ull << 20)
+#define BC250_GCVM_GART_ENTRIES  8192u
+#define BC250_GCVM_GART_LEGACY_ENTRIES 512u
+#define BC250_MMHUB_GART_BYTES   (2ull << 20)
 /* Layout de PTE do Navi 10 (bc250_gcvm_contract.h): bits sao as flags. */
 #define BC250_GCVM_GART_PTE_ADDR_MASK    0x0000FFFFFFFFF000ull
 /*

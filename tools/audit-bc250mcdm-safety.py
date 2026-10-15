@@ -2035,7 +2035,7 @@ def audit_primary_allocation_is_declared_to_the_kernel(errors: list[str]) -> Non
         require(dealloc, "args.hResource = Allocation->RuntimeResource;",
                 "desalocacao simetrica por recurso (Deallocate)", errors)
 
-    create_res = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    create_res = function_body(umd, "static VOID Bc250Umd10CreateResourceBody(")
     if not create_res:
         errors.append("Bc250Umd10CreateResource nao localizado")
     else:
@@ -2089,7 +2089,7 @@ def audit_primary_is_not_overbroad(errors: list[str]) -> None:
            "BIND_PRESENT implicando primariedade", errors)
 
     # 2. Exigir verificacao estrita de resolucao e recusa nomeada
-    create_res = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    create_res = function_body(umd, "static VOID Bc250Umd10CreateResourceBody(")
     if not create_res:
         errors.append("Bc250Umd10CreateResource nao localizado")
     else:
@@ -3671,10 +3671,13 @@ def audit_f3_pixel_and_residency_truth(errors: list[str]) -> None:
     forbid(q, "Allocation.Resident", "F3 residency inferred from local cache", errors)
     require(q, "result = S_NOT_RESIDENT;", "F3 nonresident aggregate status", errors)
     require(q, "return E_UNEXPECTED;", "F3 unknown residency rejected", errors)
-    create = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
-    for name in ("MapAllocation", "MakeResident", "WaitPaging"):
+    create = function_body(umd, "static VOID Bc250Umd10CreateResourceBody(")
+    for name in ("MapAllocation", "MakeResident"):
         require(create, "wsStatus = Bc250Winsys" + name, "F3 creation checks " + name, errors)
         forbid(create, "(void)Bc250Winsys" + name, "F3 creation discards " + name, errors)
+    # PAG.1 (doc 754): a espera e' medida (MENU.1) e pode ser adiada so' pela politica unica.
+    require(create, "wsStatus = Bc250UmdMenu1WaitPaging(device, &res->Allocation);", "F3 creation checks WaitPaging", errors)
+    forbid(create, "(void)Bc250WinsysWaitPaging", "F3 creation discards WaitPaging", errors)
     require(create, "BC250_WINSYS_STATUS cleanup = Bc250WinsysDeallocate", "F3 creation rolls back", errors)
     require(create, "CreateResource RECUSADO", "F3 creation reports failure", errors)
     resident = function_body(winsys, "BC250_WINSYS_STATUS Bc250WinsysMakeResident")
@@ -3801,7 +3804,7 @@ def audit_dxgi_present_chain_honest(errors: list[str]) -> None:
     # ocorrencias em driver/umd, e o struct so' aparecia num `!= NULL`. O campo
     # Flags de entrada distingue back buffer (OPTIONAL) de front/proxy, e e' a
     # base da decisao do item 2.2. Sem ler, a proxima corrida nao mede nada.
-    create_res = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    create_res = function_body(umd, "static VOID Bc250Umd10CreateResourceBody(")
     if not create_res:
         errors.append("Bc250Umd10CreateResource nao localizado")
     else:
@@ -4248,8 +4251,44 @@ def audit_frente_b_alias_is_bounded(errors: list[str]) -> None:
     mirror = (umd / "bc250_radv_import.h").read_text(encoding="utf-8", errors="replace")
     require(res_vk, "Bc250UmdFrenteBPreCheck(", "alias decide pela politica pura (pre)", errors)
     caps = (umd / "bc250_umd_caps_probe.c").read_text(encoding="utf-8", errors="replace")
-    require(caps, "if (RenderTarget) return", "Corrida 190: render target fora do alias ate o mecanismo ser medido", errors)
-    require(caps, "if (!OpenedSurface) return", "Corridas 191/192: alias so em superficie aberta de outro processo", errors)
+    require(caps, "if (RenderTarget && !PresentableTarget) return", "Corrida 190: render target NAO apresentavel fora do alias", errors)
+    require(caps, "if (!OpenedSurface && !PresentableTarget) return", "Corridas 191/192: textura propria fora do alias", errors)
+    # ZC.1 (doc 749): o alvo sem copia e' so' render target apresentavel do proprio processo,
+    # gira com a identidade e o Present espera a GPU antes do flip.
+    require(res_vk, "((BC250_UMD_ZC1_PRIMARY_RT_ALIAS && pRes->IsPrimary) ||", "ZC.1 so' em primaria ou compartilhada", errors)
+    require(res_vk, "isRt && !pRes->OpenedShared &&", "ZC.1 nunca em superficie aberta de outro processo", errors)
+    require(d3d, "dst->ZeroCopyTarget = src->ZeroCopyTarget;", "ZC.1 gira com a identidade do recurso", errors)
+    require(d3d, "last->ZeroCopyTarget = savedZeroCopy;", "ZC.1 gira com a identidade do recurso (ultimo)", errors)
+    require(d3d, "zcRes = Bc250UmdVkFlushCommands(&device->VkBridge);", "ZC.1: Present espera a GPU antes do flip", errors)
+    # ZC.1b (doc 750): com alias a sombra de CPU nao sobe por cima da copia de GPU (tela preta da 293/190).
+    require(d3d, 'Bc250UmdCopySkipsShadowUpload(dst, gpuCopied, "ResourceCopyRegion")', "ZC.1b: CopyRegion nao sobe a sombra sobre destino com alias", errors)
+    require(d3d, 'Bc250UmdCopySkipsShadowUpload(dst, gpuCopied, "ResourceCopy")', "ZC.1b: Copy nao sobe a sombra sobre destino com alias", errors)
+    # PSO.1 (doc 751): pipeline com cache persistente e captura de IR so' por opcao explicita.
+    pso = (umd / "bc250_umd_pipeline_cache.c").read_text(encoding="utf-8", errors="replace")
+    brg = (umd / "bc250_umd_vulkan_bridge.c").read_text(encoding="utf-8", errors="replace")
+    require(pso, "vkCreateGraphicsPipelines(pBridge->Device, pBridge->PsoCache,", "PSO.1: pipeline usa o cache persistente", errors)
+    forbid(pso, "vkCreateGraphicsPipelines(pBridge->Device, VK_NULL_HANDLE,", "PSO.1: pipeline sem cache (recompila tudo a cada device)", errors)
+    require(brg, '"PipelineIrCapture"', "PSO.1: captura de IR so' com HKLM PipelineIrCapture=1", errors)
+    require(brg, "pBridge->PipelineIrCaptureEnabled = irWanted;", "PSO.1: captura de IR desligada por padrao", errors)
+    # SHD.1 (doc 752): o tradutor abre no OpenAdapter, antes de o Chromium travar o processo de GPU.
+    require(d3d, "SHD1 pre-carga no OpenAdapter", "SHD.1: tradutor de shader pre-carregado no OpenAdapter", errors)
+    # PAG.1 (doc 754): espera de paginacao adiada so' para recurso com memoria propria;
+    # todo consumidor da alocacao WDDM espera antes de a GPU (ou a CPU) toca-la.
+    blt = (umd / "bc250_umd_blt.inl").read_text(encoding="utf-8", errors="replace")
+    ws = (umd / "bc250_wddm_winsys.c").read_text(encoding="utf-8", errors="replace")
+    require(d3d, "if (Bc250UmdPag1MayDefer(pCreate, isPrimary)) {", "PAG.1: adiamento decidido pela politica unica", errors)
+    require(d3d, "if (IsPrimary) return FALSE;", "PAG.1: primaria nunca adia", errors)
+    require(d3d, "if ((pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) != 0u) return FALSE;", "PAG.1: compartilhado nunca adia", errors)
+    require(d3d, "(res->VkMemAliased || res->ZeroCopyTarget)) {", "PAG.1: alias de memoria espera antes da 1a submissao", errors)
+    require(d3d, '(void)Bc250UmdPag1WaitNow(device, &srcRes->Allocation, "Present origem");', "PAG.1: Present espera a origem", errors)
+    require(blt, 'Bc250UmdPag1WaitNow(d, &src->Allocation, "BltViaKmd origem")', "PAG.1: composicao pelo KMD espera a origem", errors)
+    require(blt, 'Bc250UmdPag1WaitNow(d, &dst->Allocation, "BltViaKmd destino")', "PAG.1: composicao pelo KMD espera o destino", errors)
+    if ws.count("BC250_WINSYS_STATUS pagingStatus = Bc250WinsysWaitPaging(Context, Allocation);") != 2:
+        errors.append("PAG.1: Upload e Read da alocacao precisam esperar a paginacao adiada")
+    # PSO.1b (doc 754): mesmo tamanho = nada novo, nao regrava.
+    require(brg, "if ((uint32_t)size == pBridge->PsoCacheSavedBytes) {", "PSO.1b: cache sem mudanca nao e' regravado", errors)
+    # MENU.1 (doc 754): uma linha por device com o tempo por fase.
+    require(d3d, 'Bc250UmdMenu1Report(device, "1o Present");', "MENU.1: tempo por fase no 1o Present", errors)
     require(res_vk, "Bc250UmdFrenteBLayoutCheck(", "alias confere o layout declarado pela RADV", errors)
     require(res_vk, "imgInfo.tiling = VK_IMAGE_TILING_LINEAR;", "alias so' com imagem LINEAR", errors)
     require(res_vk, "imgInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;",
@@ -5002,7 +5041,7 @@ def audit_dx59_allocation_query(errors: list[str]) -> None:
     if not (0 <= allocate < probe < map_call):
         errors.append("DX.59: sonda UMD deve rodar apos Allocate e antes de Map")
     helper_start = umd.find("static void Bc250UmdProbeAllocationCallback(")
-    helper_end = umd.find("VOID APIENTRY Bc250Umd10CreateResource(", helper_start)
+    helper_end = umd.find("static VOID Bc250Umd10CreateResourceBody(", helper_start)
     helper = umd[helper_start:helper_end] if helper_start >= 0 and helper_end > helper_start else ""
     if not ("pfnEscapeCb" in helper and "ReplyValid" in helper and
             "AllocateHr" in helper and "void Bc250UmdProbeAllocationCallback" in helper):
@@ -8064,7 +8103,13 @@ def audit_dx32_engine_split_skip_and_vmid_probe(errors: list[str]) -> None:
     rb = sdma[r:sdma.find("\n}\n", r)] if r >= 0 else ""
     if "ScanoutLastWriteFull = FALSE;" not in rb:
         errors.append("DX.32: escrita em retangulo nao apaga a marca de copia integral")
-    if sdma.count("ScanoutLastWriteFull =") != 3:
+    # COMP.VA (doc 743): o wrapper da janela da GART e' o quarto escritor e so'
+    # pode APAGAR a marca (copia pela janela nunca prova scanout integral).
+    g = sdma.find("BOOLEAN Bc250SdmaPresentBltViaGartWindow(\n")
+    gb = sdma[g:sdma.find("\n}\n", g)] if g >= 0 else ""
+    if "ScanoutLastWriteFull = FALSE;" not in gb or "ScanoutLastWriteFull = full" in gb:
+        errors.append("COMP.VA: copia pela janela da GART nao apaga (ou grava) a marca de copia integral")
+    if sdma.count("ScanoutLastWriteFull =") != 4:
         errors.append("DX.32: marca de copia integral escrita fora dos wrappers")
 
     if "BC250_GFX_REG_COMPUTE_VMID, &computeVmid)" not in mini or "[TDR_GFX_VMID] ObservedComputeVmid=" not in mini:
@@ -8528,7 +8573,7 @@ def audit_dx49_desktop_throughput(errors: list[str]) -> None:
     disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
 
     # (1) staging persistente, com a fence da copia ainda esperada.
-    up = function_body(res, "BOOL Bc250UmdVkUploadImageData(")
+    up = function_body(res, "static BOOL Bc250UmdVkUploadImageDataBody(")
     if "Bc250UmdVkEnsureUploadStaging(pBridge" not in up:
         errors.append("DX.49: upload de textura nao usa o staging persistente")
     for forbidden in ("vkAllocateMemory(", "vkFreeMemory(", "vkCreateBuffer(", "vkDestroyBuffer("):
@@ -8563,7 +8608,7 @@ def audit_dx49_desktop_throughput(errors: list[str]) -> None:
         errors.append("DX.49: trace do draw afirma fence concluida sem flush")
     require(desc, "if (device->DrawUsesRing) {", "DX.49 CB do lote no anel", errors)
     require(desc, "Bc250UmdVkDrawRingPut(bridge, resource->pCpuShadow", "DX.49 CB do lote no anel", errors)
-    fl = function_body(bridge, "VkResult Bc250UmdVkFlushCommands(")
+    fl = function_body(bridge, "static VkResult Bc250UmdVkFlushCommandsBody(")
     close_rp = fl.find("*pBridge->pRenderPassOpen = FALSE;")
     end_cb = fl.find("vkEndCommandBuffer(")
     if not (0 <= close_rp < end_cb):
@@ -8730,7 +8775,7 @@ def audit_dx54_desktop_speed(errors: list[str]) -> None:
         errors.append("DX.54: pool por draw nao e' so' o fallback do pool persistente")
     require(bind, "bridge->DescriptorFallbackPools++;", "DX.54 fallback contado", errors)
     require(bind, "[DX54_DESC] POOL POR DRAW (fallback #%llu)", "DX.54 fallback dito no log", errors)
-    fl = function_body(bridge, "VkResult Bc250UmdVkFlushCommands(")
+    fl = function_body(bridge, "static VkResult Bc250UmdVkFlushCommandsBody(")
     ok_branch = fl.find("Bc250UmdVkReleaseDescriptorBatches(pBridge);")
     reset = fl.find("vkResetDescriptorPool(pBridge->Device, pBridge->PersistentPool, 0)")
     if not (0 <= ok_branch < reset) or bridge.count("vkResetDescriptorPool(pBridge->Device") != 1:
@@ -8788,14 +8833,14 @@ def audit_dx79_texture_upload_coalescing(errors: list[str]) -> None:
     require(header, "VkDeviceSize UploadStagingHead;", "DX.79 cabeca do anel de staging no header", errors)
     require(header, "#define BC250_DX79_UPLOAD_ALIGN 256u", "DX.79 alinhamento do anel de staging", errors)
 
-    up = function_body(res, "BOOL Bc250UmdVkUploadImageData(")
+    up = function_body(res, "static BOOL Bc250UmdVkUploadImageDataBody(")
     require(up, "BC250_DX79_UPLOAD_ALIGN", "DX.79 upload alinha pelo anel", errors)
     require(up, "region.bufferOffset = uploadOffset;", "DX.79 copia com offset no staging", errors)
     require(up, "pBridge->UploadStagingHead = uploadOffset + (VkDeviceSize)ByteSize;", "DX.79 cursor avancado", errors)
     require(up, "if (wrapNeeded)", "DX.79 flush condicional ao wrap", errors)
     require(up, "[DX79_UPLOAD]", "DX79 telemetria de upload", errors)
 
-    fl = function_body(bridge, "VkResult Bc250UmdVkFlushCommands(")
+    fl = function_body(bridge, "static VkResult Bc250UmdVkFlushCommandsBody(")
     ok_branch = fl.find("pBridge->DrawRingHead = 0;")
     reset = fl.find("pBridge->UploadStagingHead = 0;", ok_branch if ok_branch >= 0 else 0)
     if not (0 <= ok_branch <= reset):
@@ -9846,6 +9891,11 @@ def audit_dcn1_flip_pelo_hubp(errors: list[str]) -> None:
         "Bc250Dcn2Blank", "Bc250Dcn2CrcArm", "Bc250Dcn2CrcDisarm", "Bc250Dcn2CursorRestore",
         "Bc250Dcn2CursorSetPosition", "Bc250Dcn2CursorSetShape", "Bc250Dcn2IrqArm",
         "Bc250Dcn2IrqDisarm", "Bc250Dcn2Teardown", "Bc250DisplayDcnIsr",
+        # D12 (doc 716/718, proposto para a 274): pad DDC1/AUX0, fechado por
+        # audit_dcn12_aux_pad_hw_mode.
+        "Bc250Dcn2AuxPadAcquire", "Bc250Dcn2AuxPadRelease",
+        # D19 (doc 716/720, proposto para a 275): fechado por audit_dcn19_vtotal_refresh_proof.
+        "Bc250Dcn2VTotalProve", "Bc250Dcn2VTotalBlank", "Bc250Dcn2VTotalUnblank",
     }
     if writers - {"Bc250DcnFlipProgram", "Bc250DcnFlipRestoreGop"} - dcn2_writers:
         errors.append(f"DCN.1: escrita de DCN fora do flip, do retorno ao GOP e da DCN.2: {sorted(writers)}")
@@ -9879,10 +9929,10 @@ def audit_dcn1_flip_pelo_hubp(errors: list[str]) -> None:
         errors.append("DCN.1: o StartDevice tem de ler DcnFlip e repassar so' com present==1 e valor==1")
     # Corrida 269 (doc 711): 15 de 881 flips sem destino. Cada flip cai num
     # balde so' (latchado, substituido, pendente) e o teardown confere a conta.
-    poll = function_body(ddi, "static VOID Bc250DcnFlipPollLatch(")
-    if "DisplayedSeg, 0, 0) == requestedSeg) return;" in poll \
-            or not re.search(r"if \(resolved >= flipsBefore\) return;", poll) \
-            or not re.search(r"InterlockedCompareExchange\(&s_Bc250Dcn\.ResolvedSeq, flipsBefore, resolved\) != resolved\) return;", poll) \
+    poll = function_body(ddi, "static BOOLEAN Bc250DcnFlipPollLatch(")
+    if "DisplayedSeg, 0, 0) == requestedSeg) return FALSE;" in poll \
+            or not re.search(r"if \(resolved >= flipsBefore\) return FALSE;", poll) \
+            or not re.search(r"InterlockedCompareExchange\(&s_Bc250Dcn\.ResolvedSeq, flipsBefore, resolved\) != resolved\) return FALSE;", poll) \
             or "Bc250DcnFlipSupersededBetween(" not in poll:
         errors.append("DCN.1: o latch se resolve pela sequencia do flip (CAS em ResolvedSeq) e conta os substituidos")
     restore = function_body(ddi, "static VOID Bc250DcnFlipRestoreGop(")
@@ -9903,6 +9953,257 @@ def audit_dcn1_flip_pelo_hubp(errors: list[str]) -> None:
         errors.append("DCN.1: Present sem copia tem de ser registrado como SEM COPIA, nao como Blt SDMA=YES")
     if "(l % 1024) == 0) Bc250DcnFlipLogSummary" in poll or "Bc250DcnFrameDelta(s_LastSummaryFrame, nowFrame) >= 256u" not in poll:
         errors.append("DCN.1: o [DCN1_RESUMO] periodico sai por quadros do OTG, nao por contagem de latches")
+
+
+def audit_dcn1b_flip_completo_pela_interrupcao(errors: list[str]) -> None:
+    """Completar o flip pela interrupcao (doc 716 par.6.1, doc 717): a
+    interrupcao de flip do HUBP0 (fonte 0x4F) ja chegava 1:1 desde a DCN.1,
+    mas so' contava (D05). Agora o ISR liga um sinalizador DIRQL-safe (so'
+    InterlockedExchange, sem log e sem lock -- DIRQL.1) e o DPC de VSYNC
+    confere o latch ANTES de qualquer saida antecipada ligada a notificar
+    VSYNC ao DXGK -- senao um DPC disparado so' pelo flip (sem VSTARTUP/
+    VUPDATE/VLINE0, que nao chegam ao IH, D06) perderia a resolucao esperando
+    o tique periodico de 4 ms. A atribuicao (foi a interrupcao, nao o timer,
+    que resolveu este latch) e' a funcao pura Bc250DcnFlipLatchIsViaIrq,
+    testavel offline sem registrador."""
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    isr = function_body(ddi, "BOOLEAN Bc250DisplayDcnIsr(")
+    if "SpinLock" in isr or "Bc250DisplayLog" in isr:
+        errors.append("DCN.1b: o ISR do DCN continua sem logar e sem tomar lock (DIRQL.1)")
+    flip_start = isr.find("BC250_DCN_IRQ_FLIP")
+    flip_end = isr.find("} else {", flip_start) if flip_start >= 0 else -1
+    if flip_start < 0 or flip_end < 0 or \
+            "InterlockedExchange(&s_Bc250Dcn2.FlipIrqDpcPending, 1);" not in isr[flip_start:flip_end]:
+        errors.append("DCN.1b: o ramo de flip do ISR tem de ligar FlipIrqDpcPending so' por InterlockedExchange")
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_flip_contract.h").read_text(encoding="utf-8", errors="replace")
+    if "int Bc250DcnFlipLatchIsViaIrq(int FlipIrqDpcPendingConsumed, int LatchDetectedThisCall);" not in hdr:
+        errors.append("DCN.1b: a decisao de atribuicao (via IRQ ou via timer) tem de ser a funcao pura declarada no contrato")
+    src = (ROOT / "driver" / "core" / "bc250_dcn_flip_contract.c").read_text(encoding="utf-8", errors="replace")
+    attrib = function_body(src, "int Bc250DcnFlipLatchIsViaIrq(")
+    if not attrib or "Bc250DcnRead(" in attrib or "Bc250DcnWrite(" in attrib:
+        errors.append("DCN.1b: Bc250DcnFlipLatchIsViaIrq tem de ser pura (sem registrador) para ser testavel offline")
+    poll_sig = function_body(ddi, "static BOOLEAN Bc250DcnFlipPollLatch(")
+    if not poll_sig:
+        errors.append("DCN.1b: Bc250DcnFlipPollLatch tem de devolver BOOLEAN (TRUE so' quando resolve um latch novo)")
+    dpc = function_body(ddi, "static VOID Bc250VsyncDpcRoutine(")
+    irq_pos = dpc.find("Bc250DcnFlipPollLatch()")
+    gate_pos = dpc.find("Bc250Dcn2VsyncFromIrq(")
+    if irq_pos < 0 or gate_pos < 0 or irq_pos > gate_pos:
+        errors.append("DCN.1b: o DPC tem de conferir o latch do flip ANTES de o fromIrq decidir sobre notificar VSYNC")
+    if "InterlockedExchange(&s_Bc250Dcn2.FlipIrqDpcPending, 0)" not in dpc \
+            or "Bc250DcnFlipLatchIsViaIrq((int)viaFlipIrq, latchedNow ? 1 : 0)" not in dpc \
+            or "InterlockedIncrement(&s_Bc250Dcn.LatchedViaFlipIrq);" not in dpc:
+        errors.append("DCN.1b: o DPC tem de consumir o sinalizador do ISR e contar o latch atribuido a interrupcao do flip")
+    if "latchados_via_irq_do_flip=" not in ddi:
+        errors.append("DCN.1b: o [DCN1_RESUMO] tem de nomear quantos latches foram vistos via a interrupcao do flip (Lei 1/3)")
+
+
+def _bc250_dcn_window_bounds() -> tuple[int, int]:
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_flip_contract.h").read_text(encoding="utf-8", errors="replace")
+    base_m = re.search(r"#define\s+BC250_DCN_FLIP_WINDOW_BASE\s+0x([0-9A-Fa-f]+)u", hdr)
+    bytes_m = re.search(r"#define\s+BC250_DCN_FLIP_WINDOW_BYTES\s+0x([0-9A-Fa-f]+)u", hdr)
+    if not base_m or not bytes_m:
+        return (0, 0)
+    return (int(base_m.group(1), 16), int(bytes_m.group(1), 16))
+
+
+def audit_dcn06_irq_dest_readonly(errors: list[str]) -> None:
+    """D06 (doc 716 par.5.1, doc 718, SO' LEITURA): roteamento das
+    interrupcoes do cliente DCE. OTG0_INTERRUPT_DEST e DCHUB_INTERRUPT_DEST2
+    sao mm de dcn_2_0_0_offset.h (o dcn_2_0_3_offset.h nao traz o bloco
+    dce_dc_dmu_ihc_dispdec); a semantica do bit e' H e por isso nenhum
+    registrador e' escrito -- so' lido e comparado com a rota do flip."""
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.h").read_text(encoding="utf-8", errors="replace")
+    expected = {
+        "BC250_DCN2_REG_OTG0_INTERRUPT_DEST": 0x0154, "BC250_DCN2_REG_DCHUB_INTERRUPT_DEST2": 0x014F,
+    }
+    for name, mm in expected.items():
+        m = re.search(r"#define\s+" + name + r"\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u\)", hdr)
+        if not m or int(m.group(1), 16) != mm:
+            errors.append(f"DCN.06: {name} diverge do mm 0x{mm:04X} de dcn_2_0_0_offset.h")
+    masks = {
+        "BC250_DCN2_OTG0_VLINE0_DEST_MASK": 0x00000200, "BC250_DCN2_OTG0_VSTARTUP_DEST_MASK": 0x00010000,
+        "BC250_DCN2_OTG0_VUPDATE_NO_LOCK_DEST_MASK": 0x00080000, "BC250_DCN2_DCHUB_HUBP0_FLIP_DEST_MASK": 0x00000001,
+    }
+    for name, val in masks.items():
+        mm = re.search(r"#define\s+" + name + r"\s+0x([0-9A-Fa-f]+)u", hdr)
+        if not mm or int(mm.group(1), 16) != val:
+            errors.append(f"DCN.06: {name} diverge de dcn_2_0_0_sh_mask.h (esperado 0x{val:08X})")
+    if "void Bc250DcnIrqDestDecode(uint32_t OtgInterruptDest, uint32_t DchubInterruptDest2," not in hdr:
+        errors.append("DCN.06: a decodificacao tem de ser a funcao pura declarada no contrato")
+    src = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.c").read_text(encoding="utf-8", errors="replace")
+    decode = function_body(src, "void Bc250DcnIrqDestDecode(")
+    if not decode or "Bc250DcnRead(" in decode or "Bc250DcnWrite(" in decode:
+        errors.append("DCN.06: Bc250DcnIrqDestDecode tem de ser pura (sem registrador)")
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    read_dest = function_body(ddi, "static VOID Bc250Dcn2ReadIrqDest(")
+    if not read_dest or "Bc250DcnWrite(" in read_dest:
+        errors.append("DCN.06: Bc250Dcn2ReadIrqDest nao pode escrever registrador (so' leitura)")
+    if "if (Bc250Dcn2Key(BC250_DCN2_KEY_IRQ_DEST)) Bc250Dcn2ReadIrqDest();" not in ddi:
+        errors.append("DCN.06: a leitura so' roda com a chave BC250_DCN2_KEY_IRQ_DEST ligada")
+    base, bytes_ = _bc250_dcn_window_bounds()
+    for off in (0xD83C, 0xD850):
+        if not (base <= off and off + 4 <= base + bytes_):
+            errors.append(f"DCN.06: a janela mapeada [0x{base:X}, 0x{base + bytes_:X}) nao cobre o offset 0x{off:X}")
+
+
+def audit_dcn12_aux_pad_hw_mode(errors: list[str]) -> None:
+    """D12 (doc 716 par.5.2, doc 718): pad DDC1/AUX0 em modo hardware/AUX,
+    como dal_ddc_open(GPIO_MODE_HARDWARE, MODE_AUX). So' DC_GPIO_DDC1_MASK,
+    so' durante a leitura do EDID, com volta ao valor do GOP em toda saida
+    (Lei 5) e readback antes de seguir (falha fechada)."""
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.h").read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"#define\s+BC250_DCN2_REG_GPIO_DDC1_MASK\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u\)", hdr)
+    if not m or int(m.group(1), 16) != 0x28D0:
+        errors.append("DCN.12: BC250_DCN2_REG_GPIO_DDC1_MASK diverge do mm 0x28D0 de dcn_2_0_3_offset.h")
+    masks = {
+        "BC250_DCN2_GPIO_DDC1CLK_MASK": 0x00000001, "BC250_DCN2_GPIO_DDC1DATA_MASK": 0x00000100,
+        "BC250_DCN2_GPIO_AUX_PAD1_MODE": 0x00010000,
+    }
+    for name, val in masks.items():
+        mm = re.search(r"#define\s+" + name + r"\s+0x([0-9A-Fa-f]+)u", hdr)
+        if not mm or int(mm.group(1), 16) != val:
+            errors.append(f"DCN.12: {name} diverge de dcn_2_0_3_sh_mask.h (esperado 0x{val:08X})")
+    src = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.c").read_text(encoding="utf-8", errors="replace")
+    value_fn = function_body(src, "uint32_t Bc250DcnAuxPadHardwareModeValue(")
+    if not value_fn or "Bc250DcnRead(" in value_fn or "Bc250DcnWrite(" in value_fn \
+            or "BC250_DCN2_GPIO_DDC1CLK_MASK" not in value_fn or "BC250_DCN2_GPIO_AUX_PAD1_MODE" not in value_fn:
+        errors.append("DCN.12: Bc250DcnAuxPadHardwareModeValue tem de ser pura (Lei 6, sem registrador)")
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    acquire = function_body(ddi, "static BOOLEAN Bc250Dcn2AuxPadAcquire(")
+    if not acquire or "Bc250DcnAuxPadHardwareModeValue(" not in acquire \
+            or acquire.count("Bc250DcnWrite(BC250_DCN2_REG_GPIO_DDC1_MASK") < 2:
+        errors.append("DCN.12: a adocao tem de usar a funcao pura e reverter ao valor salvo se o readback nao confirmar")
+    release = function_body(ddi, "static VOID Bc250Dcn2AuxPadRelease(")
+    if "Bc250DcnWrite(BC250_DCN2_REG_GPIO_DDC1_MASK, SavedMask);" not in release:
+        errors.append("DCN.12: a devolucao tem de escrever exatamente o valor salvo (Lei 5)")
+    edid = function_body(ddi, "static VOID Bc250Dcn2ReadRealEdid(")
+    acquire_pos = edid.find("Bc250Dcn2AuxPadAcquire(&savedGpioMask, &savedGpioCtrl5)")
+    probe_pos = edid.find("Bc250Dcn2AuxProbeDpcd(")
+    if acquire_pos < 0 or probe_pos < 0 or acquire_pos > probe_pos:
+        errors.append("DCN.12: o pad tem de ser adotado ANTES da primeira transacao AUX")
+    if edid.count("Bc250Dcn2AuxPadRelease(savedGpioMask, savedGpioCtrl5);") < 2:
+        errors.append("DCN.12: toda saida de Bc250Dcn2ReadRealEdid tem de devolver o pad ao GOP")
+    if "BC250_DCN2_KEY_AUX_HW_MODE" not in edid:
+        errors.append("DCN.12: o pad so' e' tocado com a chave BC250_DCN2_KEY_AUX_HW_MODE ligada")
+    base, bytes_ = _bc250_dcn_window_bounds()
+    if not (base <= 0x17640 and 0x17640 + 4 <= base + bytes_):
+        errors.append(f"DCN.12: a janela mapeada [0x{base:X}, 0x{base + bytes_:X}) nao cobre o offset 0x17640")
+    # C09 (doc 765): a segunda metade do hw_ddc.c set_config(MODE_AUX).
+    m5 = re.search(r"#define\s+BC250_DCN2_REG_GPIO_AUX_CTRL_5\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u\)", hdr)
+    if not m5 or int(m5.group(1), 16) != 0x291D:
+        errors.append("C09: BC250_DCN2_REG_GPIO_AUX_CTRL_5 diverge do mm 0x291D de dcn_2_0_3_offset.h")
+    mi = re.search(r"#define\s+BC250_DCN2_GPIO_DDC_PAD1_I2CMODE\s+0x([0-9A-Fa-f]+)u", hdr)
+    if not mi or int(mi.group(1), 16) != 0x00001000:
+        errors.append("C09: BC250_DCN2_GPIO_DDC_PAD1_I2CMODE diverge de dcn_2_0_3_sh_mask.h (0x00001000)")
+    i2c_fn = function_body(src, "uint32_t Bc250DcnAuxPadI2cModeOffValue(")
+    if not i2c_fn or "Bc250DcnRead(" in i2c_fn or "Bc250DcnWrite(" in i2c_fn \
+            or "BC250_DCN2_GPIO_DDC_PAD1_I2CMODE" not in i2c_fn:
+        errors.append("C09: Bc250DcnAuxPadI2cModeOffValue tem de ser pura (Lei 6, sem registrador)")
+    if "Bc250DcnAuxPadI2cModeOffValue(" not in acquire \
+            or acquire.count("Bc250DcnWrite(BC250_DCN2_REG_GPIO_AUX_CTRL_5") < 2:
+        errors.append("C09: a adocao do AUX_CTRL_5 tem de usar a funcao pura e reverter se o readback nao confirmar")
+    if "Bc250DcnWrite(BC250_DCN2_REG_GPIO_AUX_CTRL_5, SavedCtrl5);" not in release:
+        errors.append("C09: a devolucao tem de escrever exatamente o AUX_CTRL_5 salvo (Lei 5)")
+    if not (base <= 0x17774 and 0x17774 + 4 <= base + bytes_):
+        errors.append(f"C09: a janela mapeada [0x{base:X}, 0x{base + bytes_:X}) nao cobre o offset 0x17774")
+
+
+def audit_dcn19_vtotal_refresh_proof(errors: list[str]) -> None:
+    """D19 (doc 716 par.6.4, doc 720, proposto para a 275): prova que o
+    V_TOTAL muda o refresh medido de verdade (pela varredura, nao so' o
+    readback do nosso proprio registrador), sem tocar H_TOTAL, blank, sync,
+    clock, PHY nem link; so' diminui o refresh; e devolve ao V_TOTAL do GOP
+    antes do desktop aparecer (Lei 5), medindo a volta tambem."""
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.h").read_text(encoding="utf-8", errors="replace")
+    if "uint32_t Bc250DcnComputeVTotalForRefresh(" not in hdr:
+        errors.append("DCN.19: a decisao de V_TOTAL novo tem de ser a funcao pura declarada no contrato")
+    src = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.c").read_text(encoding="utf-8", errors="replace")
+    compute = function_body(src, "uint32_t Bc250DcnComputeVTotalForRefresh(")
+    if not compute or "Bc250DcnRead(" in compute or "Bc250DcnWrite(" in compute:
+        errors.append("DCN.19: Bc250DcnComputeVTotalForRefresh tem de ser pura (sem registrador)")
+    if "DesiredRefreshMilliHz >= CurrentRefreshMilliHz) return BC250_DCN_VTOTAL_REFUSE_NOT_LOWER;" not in compute:
+        errors.append("DCN.19: so' pode diminuir o refresh (aumentar V_TOTAL); aumentar refresh tem de ser recusado")
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    prove = function_body(ddi, "static VOID Bc250Dcn2VTotalProve(")
+    if not prove:
+        errors.append("DCN.19: Bc250Dcn2VTotalProve ausente")
+    else:
+        if "currentMilliHz - 10000u" not in prove or "currentMilliHz +" in prove:
+            errors.append("DCN.19: a prova tem de pedir um refresh MENOR (so' diminuir), nunca maior")
+        if prove.count("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL") < 3:
+            errors.append("DCN.19: esperadas 3 escritas em OTG0_V_TOTAL (aplicar, falha-fechada, devolver)")
+        if prove.count("Bc250Dcn2MeasureTiming();") < 2:
+            errors.append("DCN.19: a prova tem de medir pela varredura duas vezes (com o V_TOTAL novo e depois de devolver)")
+        after_apply = prove.find("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL, before);")
+        if after_apply < 0:
+            errors.append("DCN.19: a devolucao ao V_TOTAL do GOP tem de escrever exatamente o valor salvo (Lei 5)")
+        # doc 727 (Corrida 279): optc1_program_timing (dcn10_optc.c) escreve
+        # MIN e MAX junto com V_TOTAL em toda troca ("in case V_TOTAL_CONTROL
+        # is on"); exigir o mesmo aqui, com volta ao valor do GOP e readback.
+        if prove.count("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MIN") < 2:
+            errors.append("DCN.19: OTG0_V_TOTAL_MIN tem de acompanhar o V_TOTAL (aplicar e devolver), como optc1_program_timing")
+        if prove.count("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MAX") < 2:
+            errors.append("DCN.19: OTG0_V_TOTAL_MAX tem de acompanhar o V_TOTAL (aplicar e devolver), como optc1_program_timing")
+        # aparece 2x cada: uma vez no fail-closed do readback do APLICADO,
+        # outra na devolucao final (Lei 5) -- contagem, nao so' presenca,
+        # para nao deixar a remocao de UMA das duas passar sem ser notada.
+        if prove.count("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MIN, savedMin);") < 2 or \
+                prove.count("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MAX, savedMax);") < 2:
+            errors.append("DCN.19: a devolucao de MIN/MAX (fail-closed e final) tem de escrever exatamente o valor salvo do GOP (Lei 5)")
+        # doc 730/731 (Caminho B, Corrida 282): a AMD real so' escreve
+        # OTG_V_TOTAL com o pipe apagado (dcn20_hwseq.c: blank_pixel_data
+        # ANTES de qualquer troca de temporizacao num pipe ja ativo). Exigir
+        # que o V_TOTAL nunca seja tocado sem o apagamento confirmado antes,
+        # e que toda saida depois do apagamento acenda de volta.
+        blank_pos = prove.find("Bc250Dcn2VTotalBlank(&savedBlank)")
+        first_vtotal_write = prove.find("Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL,")
+        if blank_pos < 0 or first_vtotal_write < 0 or blank_pos > first_vtotal_write:
+            errors.append("DCN.19: o apagamento (Bc250Dcn2VTotalBlank) tem de vir ANTES da 1a escrita em V_TOTAL")
+        if "if (!Bc250Dcn2VTotalBlank(&savedBlank)) return;" not in prove:
+            errors.append("DCN.19: se o apagamento nao confirmar, a prova tem de abortar sem tocar V_TOTAL (falha fechada)")
+        if prove.count("Bc250Dcn2VTotalUnblank(savedBlank);") < 3:
+            errors.append("DCN.19: toda saida depois do apagamento confirmado tem de acender de volta (readback FALHOU de V_TOTAL, de MIN/MAX, e o caminho final)")
+    blank_fn = function_body(ddi, "static BOOLEAN Bc250Dcn2VTotalBlank(")
+    if not blank_fn or "BC250_DCN2_BLANK_CURRENT_STATE" not in blank_fn or \
+            "Bc250DcnWrite(BC250_DCN2_REG_OTG0_BLANK_CONTROL, before);" not in blank_fn:
+        errors.append("DCN.19: Bc250Dcn2VTotalBlank tem de confirmar por OTG_CURRENT_BLANK_STATE e devolver o blank se nao confirmar")
+    unblank_fn = function_body(ddi, "static VOID Bc250Dcn2VTotalUnblank(")
+    if not unblank_fn or "BC250_DCN2_BLANK_CURRENT_STATE" not in unblank_fn:
+        errors.append("DCN.19: Bc250Dcn2VTotalUnblank tem de confirmar a volta por OTG_CURRENT_BLANK_STATE")
+    if "if (Bc250Dcn2Key(BC250_DCN2_KEY_VTOTAL_TEST)) Bc250Dcn2VTotalProve();" not in ddi:
+        errors.append("DCN.19: a prova so' roda com a chave BC250_DCN2_KEY_VTOTAL_TEST ligada")
+    if "D19 provado=" not in ddi:
+        errors.append("DCN.19: o [DCN2_RESUMO] tem de nomear quantas vezes a prova rodou (Lei 1/3)")
+
+
+def audit_dirql1_sem_lock_acima_de_dispatch(errors: list[str]) -> None:
+    """DIRQL.1 (doc 714). Corrida 272 (P0, dump 0x133): o flip MPO3 roda em
+    DIRQL dentro do KeSynchronizeExecution; o log tomava um spinlock com
+    KeAcquireSpinLock, que baixa o IRQL, a interrupcao do IH entrou na mesma CPU
+    e girou no spinlock de interrupcao que a propria CPU segurava. Acima de
+    DISPATCH o log nao toma lock; a copia pelo SDMA0 (RingLock) nao roda em
+    DIRQL com o IH armado; o ISR do DCN nao loga nem toma lock."""
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    ring = function_body(ddi, "static VOID Bc250LogRingAppend(")
+    a = ring.find("if (KeGetCurrentIrql() > DISPATCH_LEVEL) {\n        Bc250LogHirqlAppend(Text, Length);\n        return;\n    }")
+    b = ring.find("KeAcquireSpinLock(")
+    if a < 0 or b < 0 or a > b:
+        errors.append("DIRQL.1: acima de DISPATCH o anel do log vai ao slot sem trava ANTES de qualquer KeAcquireSpinLock")
+    hi = function_body(ddi, "static VOID Bc250LogHirqlAppend(")
+    if "SpinLock" in hi or "Bc250DisplayLog" in hi or "InterlockedCompareExchange(&g_Bc250HirqlLogWrite, w + 1, w)" not in hi:
+        errors.append("DIRQL.1: o log em DIRQL reserva o slot por CAS, sem lock e sem recursao")
+    for fn in ("static VOID Bc250LogRingDrainToFile(",):
+        if "Bc250LogHirqlDrainLocked();" not in function_body(ddi, fn):
+            errors.append(f"DIRQL.1: {fn[:-1]} tem de drenar os slots de DIRQL")
+    sw = function_body(ddi, "static NTSTATUS Bc250DisplaySwitchPrimary(")
+    g = sw.find("if (KeGetCurrentIrql() > DISPATCH_LEVEL && g_Bc250SdmaPresent.IhArmed) {")
+    c = sw.find("return Bc250DisplayCopyPrimaryToGop(")
+    if g < 0 or c < 0 or g > c or "return STATUS_INVALID_DEVICE_STATE;" not in sw[g:c]:
+        errors.append("DIRQL.1: a copia pelo SDMA0 em DIRQL com o IH armado falha fechada antes de tomar o RingLock")
+    isr = function_body(ddi, "BOOLEAN Bc250DisplayDcnIsr(")
+    if "SpinLock" in isr or "Bc250DisplayLog" in isr:
+        errors.append("DIRQL.1: o ISR do DCN nao loga nem toma lock")
 
 
 def audit_dcn2_sobre_o_gop(errors: list[str]) -> None:
@@ -9933,6 +10234,11 @@ def audit_dcn2_sobre_o_gop(errors: list[str]) -> None:
         "CURSOR0_DST_OFFSET": "CURSOR0_0_CURSOR_DST_OFFSET", "CNVC_CUR0_CONTROL": "CNVC_CUR0_CURSOR0_CONTROL",
         "CNVC_CUR0_COLOR0": "CNVC_CUR0_CURSOR0_COLOR0", "CNVC_CUR0_COLOR1": "CNVC_CUR0_CURSOR0_COLOR1",
         "CNVC_CUR0_FP_SCALE_BIAS": "CNVC_CUR0_CURSOR0_FP_SCALE_BIAS",
+        # DCN.3 (doc 714)
+        "OTG0_VINT0_POSITION": "OTG0_OTG_VERTICAL_INTERRUPT0_POSITION",
+        "OTG0_VINT0_CONTROL": "OTG0_OTG_VERTICAL_INTERRUPT0_CONTROL",
+        "OTG0_VSTARTUP_PARAM": "OTG0_OTG_VSTARTUP_PARAM",
+        "FMT0_CONTROL": "FMT0_FMT_CONTROL", "FMT0_BIT_DEPTH_CONTROL": "FMT0_FMT_BIT_DEPTH_CONTROL",
     }
     for ours, theirs in names.items():
         m = re.search(r"#define\s+BC250_DCN2_REG_" + ours + r"\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u\)", hdr)
@@ -9942,7 +10248,11 @@ def audit_dcn2_sobre_o_gop(errors: list[str]) -> None:
     for idx, (ours, theirs) in enumerate([("HPD_INT_STATUS", "HPD{i}_DC_HPD_INT_STATUS"),
                                           ("AUX_CONTROL", "DP_AUX{i}_AUX_CONTROL"),
                                           ("AUX_SW_DATA", "DP_AUX{i}_AUX_SW_DATA"),
-                                          ("AUX_SW_STATUS", "DP_AUX{i}_AUX_SW_STATUS")]):
+                                          ("AUX_SW_STATUS", "DP_AUX{i}_AUX_SW_STATUS"),
+                                          ("AUX_LS_STATUS", "DP_AUX{i}_AUX_LS_STATUS"),
+                                          ("AUX_DPHY_TX_CONTROL", "DP_AUX{i}_AUX_DPHY_TX_CONTROL"),
+                                          ("AUX_DPHY_RX_CONTROL0", "DP_AUX{i}_AUX_DPHY_RX_CONTROL0"),
+                                          ("AUX_DPHY_RX_CONTROL1", "DP_AUX{i}_AUX_DPHY_RX_CONTROL1")]):
         m = re.search(r"#define\s+BC250_DCN2_REG_" + ours + r"\(i\)\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u \+ (0x[0-9A-Fa-f]+|\d+)u \* \(uint32_t\)\(i\)\)", hdr)
         for i in (0, 1):
             u = re.search(r"#define\s+mm" + theirs.format(i=i) + r"\s+0x([0-9A-Fa-f]+)", up)
@@ -9963,20 +10273,35 @@ def audit_dcn2_sobre_o_gop(errors: list[str]) -> None:
         errors.append("DCN.2: o DPMS so' apaga o OTG com o bit DPMS")
     shape = function_body(ddi, "static NTSTATUS Bc250Dcn2CursorSetShape(")
     if "if (!Bc250DisplayDcnCursorReady()) return STATUS_NOT_SUPPORTED;" not in shape \
-            or "Shape->Flags.Value != BC250_DCN_POINTER_COLOR" not in shape:
-        errors.append("DCN.2: o cursor so' escreve com a chave e so' aceita forma de cor (ARGB) nesta rodada")
+            or "if (conv != BC250_DCN_CURSOR_OK) {" not in shape \
+            or "s_Bc250Dcn2.CursorHasShape = FALSE;\n        return STATUS_NOT_SUPPORTED;" not in shape:
+        errors.append("DCN.3: o cursor so' escreve com a chave, so' com conversao OK, e forma recusada esconde a anterior")
+    conv = function_body(strip_c_comments((ROOT / "driver" / "core" / "bc250_dcn_ext_contract.c").read_text(
+        encoding="utf-8", errors="replace")), "int Bc250DcnCursorConvert(")
+    # Inversao nao existe em ARGB: nunca aproximar (doc 714); XOR do monocromatico em y + Height.
+    if conv.count("return BC250_DCN_CURSOR_NEEDS_XOR;") != 2 \
+            or "Pixels + (uint64_t)(y + Height) * Pitch" not in conv:
+        errors.append("DCN.3: forma com inversao vai ao software (NEEDS_XOR) e o XOR monocromatico fica em y + Height")
     if "Bc250Dcn2Key(BC250_DCN2_KEY_CURSOR) && s_Bc250Dcn2.CursorVramReady" not in function_body(ddi, "ULONG Bc250DisplayDcnCursorReady("):
         errors.append("DCN.2: cursor pronto exige o bit CURSOR e o buffer de VRAM reservado")
     isr = function_body(ddi, "BOOLEAN Bc250DisplayDcnIsr(")
-    if isr.count("Bc250DcnWrite(") != 2 or "Bc250DisplayLog" in isr \
+    if isr.count("Bc250DcnWrite(") != 4 or "Bc250DisplayLog" in isr or "SpinLock" in isr \
             or "BC250_DCN2_VSTARTUP_EVENT_CLEAR, BC250_DCN2_VSTARTUP_EVENT_CLEAR" not in isr \
+            or "BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR, BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR" not in isr \
+            or "BC250_DCN2_VINT0_CLEAR, BC250_DCN2_VINT0_CLEAR" not in isr \
             or "BC250_DCN2_SURFACE_FLIP_CLEAR, BC250_DCN2_SURFACE_FLIP_CLEAR" not in isr:
-        errors.append("DCN.2: o ISR do DCN so' faz o ack (bit CLEAR, Lei 6) e nao loga em DIRQL")
+        errors.append("DCN.3: o ISR do DCN so' faz o ack das 4 fontes (bit CLEAR, Lei 6), sem log e sem lock em DIRQL")
+    dis = function_body(ddi, "static VOID Bc250Dcn2IrqDisarm(")
+    if "Bc250DcnWrite(BC250_DCN2_REG_OTG0_VINT0_POSITION, s_Bc250Dcn2.SavedVint0Pos);" not in dis \
+            or "BC250_DCN2_VUPDATE_NO_LOCK_INT_EN" not in dis or "s_Bc250Dcn2.SavedVint0Ctl" not in dis:
+        errors.append("DCN.3: o desarme devolve VUPDATE, VLINE0 (controle e posicao) como o GOP deixou (Lei 5)")
     rel = function_body(ddi, "static VOID Bc250Dcn2AuxRelease(")
-    if "Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), SavedControl);" not in rel:
-        errors.append("DCN.2: o AUX volta como o GOP deixou depois da leitura do EDID (Lei 5)")
-    if function_body(ddi, "static VOID Bc250Dcn2ReadRealEdid(").count("Bc250Dcn2AuxRelease(") != 2:
-        errors.append("DCN.2: a leitura do EDID libera o AUX nos dois caminhos (recusa e fim)")
+    if "Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), SavedControl);" not in rel \
+            or "Bc250DcnWrite(BC250_DCN2_REG_AUX_DPHY_RX_CONTROL0(Ch), SavedRx0);" not in rel:
+        errors.append("DCN.3: o AUX (CONTROL e DPHY_RX_CONTROL0) volta como o GOP deixou depois da leitura (Lei 5)")
+    if function_body(ddi, "static BOOLEAN Bc250Dcn2AuxProbeDpcd(").count("Bc250Dcn2AuxRelease(") != 2 \
+            or function_body(ddi, "static VOID Bc250Dcn2ReadRealEdid(").count("Bc250Dcn2AuxRelease(") != 1:
+        errors.append("DCN.3: o AUX e' liberado em toda saida (recusa e falha do DPCD na sonda; fim da leitura)")
     teardown = function_body(ddi, "void Bc250DisplayTeardown(")
     post = function_body(ddi, "NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceAndReleasePostDisplayOwnership(")
     for body, why in ((teardown, "TEARDOWN"), (post, "POST_DISPLAY_OWNERSHIP")):
@@ -9992,12 +10317,13 @@ def audit_dcn2_sobre_o_gop(errors: list[str]) -> None:
     if 'L"DcnExt"' not in am or "Bc250DisplaySetDcnExt(extPresent == 1u ? (dcnExt & BC250_DCN2_KEY_ALL) : 0u)" not in am:
         errors.append("DCN.2: o StartDevice le DcnExt e repassa so' com present==1, mascarado")
     sp = (ROOT / "driver" / "wdk" / "bc250_sdma_present.c").read_text(encoding="utf-8", errors="replace")
-    if "} else if (client == 0x04u && Bc250DisplayDcnIsr(src)) {" not in sp:
-        errors.append("DCN.2: o ISR do IH entrega o cliente DCE (0x04) ao display")
+    if not re.search(r"\} else if \(client == 0x04u &&\s*Bc250DisplayDcnIsr\(src, g_Bc250SdmaPresent\.IhRing\[rptr / 4u \+ 4u\]\)\) \{", sp):
+        errors.append("DCN.3: o ISR do IH entrega o cliente DCE (0x04) ao display com o ext_id (dw4)")
     mc = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace")
-    if not re.search(r"if \(Bc250DisplayDcnCursorReady\(\) != 0u\) \{\s*caps->PointerCaps\.Color = 1u;", mc) \
-            or "caps->PointerCaps.Monochrome = 1u" in mc:
-        errors.append("DCN.2: caps de ponteiro so' de cor e so' com o cursor pronto")
+    if not re.search(r"if \(Bc250DisplayDcnCursorReady\(\) != 0u\) \{\s*caps->PointerCaps\.Monochrome = 1u;\s*"
+                     r"caps->PointerCaps\.Color = 1u;\s*caps->PointerCaps\.MaskedColor = 1u;", mc) \
+            or len(re.findall(r"caps->PointerCaps\.(Monochrome|MaskedColor) = 1u", mc)) != 2:
+        errors.append("DCN.3: caps de ponteiro (mono, cor, mascarada) so' com o cursor pronto")
 
 
 def audit_mec2_poll_sem_seletor(errors: list[str]) -> None:
@@ -10356,6 +10682,79 @@ def audit_rlc1_gfxrst1_like_amdgpu(errors: list[str]) -> None:
     pr = function_body(am, "static VOID Bc250ActiveGfxRst1PostReset(BC250_DXGK_ACTIVE_CONTEXT *Context)").split("#else")[0]
     if "InterlockedExchange(&Context->GfxRst1MecHalted, 0) == 1" not in pr or        "BC250_GFX_REG_CP_MEC_CNTL, Context->GfxRst1MecCntlBefore)" not in pr:
         errors.append("GFXRST.1: o restart precisa devolver o CP_MEC_CNTL guardado, so' depois de um reset de fato")
+
+
+def audit_gfxrst2_restart_ladder(errors: list[str]) -> None:
+    """GFXRST.2 (doc 759): o restart do GFX no TDR nao fica preso ao reset do
+    quiesce. Tres etapas, cada uma so' vale com prova por execucao; o anel
+    recomeca pelo CSB (gfx_v10_0_cp_gfx_start), no pipe 0 e com CP_RB_VMID 0
+    (gfx_v10_0_cp_gfx_resume); a etapa 1 reseta o RLC e reprograma o RLC_CSIB;
+    a etapa 2 volta ao regime das 212 provas ate a Corrida 240 (RLC parado,
+    CP|GFX|CPF|CPG)."""
+    wdk = ROOT / "driver" / "wdk"
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    restart = function_body(am, "static BOOLEAN Bc250ActiveTdrRestartLifecycle(")
+    proof = function_body(am, "static BOOLEAN Bc250ActiveTdrProveGfxRestart(")
+    esc = function_body(am, "static VOID Bc250ActiveGfxRst2Escalate(BC250_DXGK_ACTIVE_CONTEXT *Context, uint32_t Stage)").split("#else")[0]
+    if not esc:
+        errors.append("GFXRST.2: Bc250ActiveGfxRst2Escalate ausente")
+        return
+    for need, label in (
+        ("for (gfxStage = 0u; gfxStage < 3u && !gfxStageOk; ++gfxStage)", "escada de tres etapas"),
+        ("Bc250ActiveGfxRst2Escalate(activeCtx, gfxStage);", "etapas 1 e 2 chamam o escalonador"),
+        ("BC250_GRBM_GFX_CNTL_BYTE_OFFSET, 0u);", "pipe 0 antes do CP_RB0 (switch_pipe)"),
+        ("BC250_GFX_REG_CP_RB_VMID, 0u);", "CP_RB_VMID 0 como o cp_gfx_resume"),
+        ("Bc250ActiveProgramClearStateBuffer(activeCtx,", "RLC_CSIB reprogramado depois do reset do RLC"),
+        ("gfxRestart = TRUE;", "etapa que prova devolve o restart como bom"),
+    ):
+        if need not in restart:
+            errors.append("GFXRST.2: restart sem " + label)
+    if restart.find("Bc250ActiveTdrProveGfxRestart(activeCtx)") < restart.find("for (gfxStage = 0u;"):
+        errors.append("GFXRST.2: a prova por execucao precisa estar dentro da escada")
+    if "Context->GfxEngine.CsbCpu[i]" not in proof or "cursor != csbEmitted + 12u" not in proof:
+        errors.append("GFXRST.2: a prova do restart precisa recomecar o anel pelo CSB")
+    if "[TDR_GFX_RESTART_DIAG]" not in proof:
+        errors.append("GFXRST.2: a falha da prova precisa dizer o estado do CP")
+    for need in ("BC250_GRBM_SOFT_RESET_CPF_MASK", "BC250_GRBM_SOFT_RESET_CPG_MASK",
+                 "BC250_GRBM_SOFT_RESET_RLC_MASK", "Bc250ActiveRlc1Disarm(Context,",
+                 "BC250_GRBM_GFX_INDEX_BROADCAST_ALL", "tmp |= mask;", "tmp &= ~mask;"):
+        if need not in esc:
+            errors.append("GFXRST.2: escalonador sem " + need)
+
+
+def audit_301_tdrlog_clk_subaloc(errors: list[str]) -> None:
+    """Corrida 301 (doc 762). TDRLOG.1: o passo do TDR vai ao disco com
+    write-through ANTES de rodar, e nunca da thread de paginacao. CLK.1: o
+    clock do GFX so' entra na faixa 1000..2000 do amdgpu e volta no
+    StopDevice. SUBALOC.1: fatia devolvida ao bloco, nunca vkFreeMemory."""
+    wdk = ROOT / "driver" / "wdk"
+    umd = ROOT / "driver" / "umd"
+    dd = strip_c_comments((wdk / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    step = function_body(dd, "static void Bc250TdrStepV(")
+    for need, label in (("FILE_WRITE_THROUGH", "write-through"), ("ZwFlushBuffersFile", "flush"),
+                        ("g_Bc250PagingActiveCount", "fora da paginacao"), ("AllowDisk", "variante sem disco")):
+        if need not in step:
+            errors.append("TDRLOG.1: Bc250TdrStepV sem " + label)
+    cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    if "Bc250TdrStep(\"janela" in cb:
+        errors.append("TDRLOG.1: DDI da janela do TDR grava disco (BuildPagingBuffer roda na thread de paginacao)")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    restart = function_body(am, "static BOOLEAN Bc250ActiveTdrRestartLifecycle(")
+    if restart.find("Bc250TdrStep(") < 0 or restart.find("Bc250TdrStep(") > restart.find("Bc250SdmaPresentRestartAfterTdrOrRevert()"):
+        errors.append("TDRLOG.1: o restart precisa marcar o passo ANTES do restart do SDMA0")
+    clk = function_body(am, "static VOID Bc250ActiveClk1Apply(")
+    for need in ("requested < 1000u", "requested > 2000u", "0x0Eu", "0x3Cu"):
+        if need not in clk:
+            errors.append("CLK.1: Bc250ActiveClk1Apply sem " + need)
+    stop = function_body(am, "static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(")
+    if "Bc250ActiveClk1Apply(context, TRUE)" not in stop:
+        errors.append("CLK.1: o StopDevice nao devolve o alvo de clock")
+    rv = strip_c_comments((umd / "bc250_umd_resource_vk.c").read_text(encoding="utf-8", errors="replace"))
+    destroy = function_body(rv, "VOID Bc250UmdVkDestroyResource(")
+    if "Bc250UmdVkSubAllocRelease(" not in destroy:
+        errors.append("SUBALOC.1: a destruicao nao devolve a fatia")
+    if destroy.find("Bc250UmdVkSubAllocRelease(") > destroy.find("vkFreeMemory("):
+        errors.append("SUBALOC.1: vkFreeMemory antes de testar se a memoria e' fatia de bloco")
 
 
 def audit_g1_golden_like_amdgpu(errors: list[str]) -> None:
@@ -12292,10 +12691,12 @@ def main() -> int:
             "journal BUSY propagated by UpdatePageTable", errors)
     require(update_pt, "return STATUS_INVALID_PARAMETER;",
             "journal invalid state propagated by UpdatePageTable", errors)
-    forbid(update_pt, "Bc250DisplayRecordGpuVaMapping(",
-           "GPUVA publication before journal commit/FlushTlb", errors)
-    require(flush_tlb, "return STATUS_IO_DEVICE_ERROR;",
-            "journal commit failure propagated by FlushTlb", errors)
+    # GPUVA.4 (Corrida 289 / doc 740): a invalidacao fisica no silicio GFXHUB
+    # desacopla do journal de software. Quando o hardware invalida com exito,
+    # falha de insercao no journal nao deve retornar STATUS_IO_DEVICE_ERROR
+    # ao SO para nao reiniciar as superficies do DWM e provocar piscadas.
+    require(flush_tlb, "GPUVA.4 (Corrida 289",
+            "GPUVA.4 decoupled journal overflow handling in FlushTlb", errors)
     require(flush_tlb, "flushRootKey != 0ull",
             "explicit valid root key gate before journal commit", errors)
     require(flush_tlb, "0u, 0u,\n        &generation",
@@ -13855,6 +14256,8 @@ def main() -> int:
     audit_p33_ih_rptr_doorbell(errors)
     audit_mec1_doorbell_range(errors)
     audit_rlc1_gfxrst1_like_amdgpu(errors)
+    audit_gfxrst2_restart_ladder(errors)
+    audit_301_tdrlog_clk_subaloc(errors)
     audit_g1_golden_like_amdgpu(errors)
     audit_rlc1b_and_logmin(errors)
     audit_tmr1_tmr_persistente_como_amdgpu(errors)
@@ -13870,7 +14273,12 @@ def main() -> int:
     audit_dbg1_debug_trace(errors)
     audit_dbg2_paging_ib_no_rastro(errors)
     audit_dcn1_flip_pelo_hubp(errors)
+    audit_dcn1b_flip_completo_pela_interrupcao(errors)
     audit_dcn2_sobre_o_gop(errors)
+    audit_dcn06_irq_dest_readonly(errors)
+    audit_dcn12_aux_pad_hw_mode(errors)
+    audit_dcn19_vtotal_refresh_proof(errors)
+    audit_dirql1_sem_lock_acima_de_dispatch(errors)
     audit_p6_mtype_uc_for_gl2_bypass(errors)
     audit_cp_eop_irq(errors)
     audit_p4_sdma1_alive(errors)

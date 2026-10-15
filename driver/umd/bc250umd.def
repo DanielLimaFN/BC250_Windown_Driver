@@ -24,3 +24,8 @@ EXPORTS
     Bc250UmdRunNode1ProofTransaction
     Bc250UmdEmitPm4Draw
     Bc250UmdVkComputeImageUploadLayout
+    Bc250UmdWsiBeginCapture
+    Bc250UmdWsiEndCapture
+    Bc250UmdWsiMarkWritten
+    Bc250UmdWsiCreateSharedFence
+    Bc250UmdWsiArmPresent

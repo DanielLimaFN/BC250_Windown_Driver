@@ -189,7 +189,7 @@ int Bc250DcnCursorConvert(uint32_t Flags, uint32_t Width, uint32_t Height, uint3
         for (y = 0u; y < BC250_DCN_CURSOR_MAX * BC250_DCN_CURSOR_MAX; ++y) clear[y] = 0u;
     }
     if (Flags == BC250_DCN_POINTER_COLOR) {
-        if (Pitch < Width * 4u) return 0;
+        if (Pitch < Width * 4u) return BC250_DCN_CURSOR_REFUSED;
         for (y = 0u; y < Height; ++y) {
             const uint8_t *row = Pixels + (uint64_t)y * Pitch;
             for (x = 0u; x < Width; ++x) {
@@ -198,10 +198,28 @@ int Bc250DcnCursorConvert(uint32_t Flags, uint32_t Width, uint32_t Height, uint3
                     ((uint32_t)row[4u * x + 2u] << 16) | ((uint32_t)row[4u * x + 3u] << 24);
             }
         }
-        return 1;
+        return BC250_DCN_CURSOR_OK;
+    }
+    if (Flags == BC250_DCN_POINTER_MASKED_COLOR) {
+        if (Pitch < Width * 4u) return BC250_DCN_CURSOR_REFUSED;
+        for (y = 0u; y < Height; ++y) {
+            const uint8_t *row = Pixels + (uint64_t)y * Pitch;
+            for (x = 0u; x < Width; ++x) {
+                uint32_t rgb = (uint32_t)row[4u * x] | ((uint32_t)row[4u * x + 1u] << 8) |
+                    ((uint32_t)row[4u * x + 2u] << 16);
+                uint32_t mask = row[4u * x + 3u];
+                uint32_t px;
+                if (mask == 0x00u) px = 0xFF000000u | rgb;          /* substitui: opaco */
+                else if (mask == 0xFFu && rgb == 0u) px = 0u;       /* XOR com 0: transparente */
+                else if (mask == 0xFFu) return BC250_DCN_CURSOR_NEEDS_XOR;
+                else return BC250_DCN_CURSOR_REFUSED;               /* mascara so' 0 ou 0xFF */
+                Dst64x64[y * BC250_DCN_CURSOR_MAX + x] = px;
+            }
+        }
+        return BC250_DCN_CURSOR_OK;
     }
     if (Flags == BC250_DCN_POINTER_MONOCHROME) {
-        if (Pitch < (Width + 7u) / 8u) return 0;
+        if (Pitch < (Width + 7u) / 8u) return BC250_DCN_CURSOR_REFUSED;
         for (y = 0u; y < Height; ++y) {
             const uint8_t *andRow = Pixels + (uint64_t)y * Pitch;
             const uint8_t *xorRow = Pixels + (uint64_t)(y + Height) * Pitch;
@@ -211,13 +229,14 @@ int Bc250DcnCursorConvert(uint32_t Flags, uint32_t Width, uint32_t Height, uint3
                 uint32_t px;
                 if (a == 1u && o == 0u) px = 0x00000000u;        /* transparente */
                 else if (a == 0u && o == 0u) px = 0xFF000000u;   /* preto */
-                else px = 0xFFFFFFFFu;                           /* branco; inverter -> branco */
+                else if (a == 0u) px = 0xFFFFFFFFu;              /* branco */
+                else return BC250_DCN_CURSOR_NEEDS_XOR;          /* inverter: software */
                 Dst64x64[y * BC250_DCN_CURSOR_MAX + x] = px;
             }
         }
-        return 1;
+        return BC250_DCN_CURSOR_OK;
     }
-    return 0;
+    return BC250_DCN_CURSOR_REFUSED;
 }
 
 void Bc250DcnCursorPosition(int32_t X, int32_t Y, uint32_t Visible, uint32_t Width,
@@ -274,7 +293,41 @@ uint32_t Bc250DcnCrcCntlEnable(uint32_t Read)
     return Bc250DcnField(v, BC250_DCN2_CRC_EN, BC250_DCN2_CRC_EN);
 }
 
+/* ---- 2. Fontes de interrupcao (DCN.3) ------------------------------------------------ */
+
+uint32_t Bc250DcnIrqClassify(uint32_t SrcId, uint32_t ExtId)
+{
+    if (SrcId == BC250_IH_SRCID_DCN_OTG0_VSTARTUP) return BC250_DCN_IRQ_VSTARTUP;
+    if (SrcId == BC250_IH_SRCID_DCN_OTG0_VUPDATE_NO_LOCK) return BC250_DCN_IRQ_VUPDATE;
+    /* 0x1E e' compartilhada por varios eventos do OTG1; so' o ext_id 6 e' VLINE0. */
+    if (SrcId == BC250_IH_SRCID_DCN_OTG0_VLINE0 && ExtId == BC250_IH_CTXID_DCN_OTG0_VLINE0)
+        return BC250_DCN_IRQ_VLINE0;
+    if (SrcId == BC250_IH_SRCID_DCN_HUBP0_FLIP) return BC250_DCN_IRQ_FLIP;
+    return BC250_DCN_IRQ_NONE;
+}
+
+uint32_t Bc250DcnVline0Position(uint32_t StartLine, uint32_t VTotal)
+{
+    uint32_t end;
+    if (VTotal == 0u || StartLine >= VTotal) return 0u;
+    end = (StartLine + 1u < VTotal) ? StartLine + 1u : 0u;
+    return (StartLine & BC250_DCN2_VINT0_LINE_START_MASK) |
+        ((end << BC250_DCN2_VINT0_LINE_END_SHIFT) & BC250_DCN2_VINT0_LINE_END_MASK);
+}
+
 /* ---- 6. AUX ------------------------------------------------------------------------- */
+
+uint32_t Bc250DcnAuxInitControl(uint32_t ReadControl, uint32_t HpdSel)
+{
+    uint32_t v = Bc250DcnField(ReadControl, BC250_DCN2_AUX_HPD_SEL_MASK,
+        HpdSel << BC250_DCN2_AUX_HPD_SEL_SHIFT);
+    return Bc250DcnField(v, BC250_DCN2_AUX_LS_READ_EN, 0u);
+}
+
+uint32_t Bc250DcnAuxInitRxControl0(uint32_t ReadRxControl0)
+{
+    return Bc250DcnField(ReadRxControl0, BC250_DCN2_AUX_RX_RECEIVE_WINDOW_MASK, 0u);
+}
 
 uint32_t Bc250DcnAuxComposeHeader(uint32_t Action, uint32_t Address, uint32_t Length,
     uint8_t Out[4])
@@ -297,4 +350,63 @@ uint32_t Bc250DcnAuxDecodeReply(uint32_t ReplyNibble)
     if (i2c == 2u) return BC250_AUX_REPLY_I2C_DEFER;
     if (i2c == 3u) return BC250_AUX_REPLY_INVALID;
     return BC250_AUX_REPLY_ACK;
+}
+
+/* ---- 7. D06 ------------------------------------------------------------------- */
+
+void Bc250DcnIrqDestDecode(uint32_t OtgInterruptDest, uint32_t DchubInterruptDest2,
+    BC250_DCN_IRQ_DEST *Out)
+{
+    if (Out == 0) return;
+    Out->VstartupDest = (OtgInterruptDest & BC250_DCN2_OTG0_VSTARTUP_DEST_MASK) ? 1u : 0u;
+    Out->VupdateNoLockDest = (OtgInterruptDest & BC250_DCN2_OTG0_VUPDATE_NO_LOCK_DEST_MASK) ? 1u : 0u;
+    Out->Vline0Dest = (OtgInterruptDest & BC250_DCN2_OTG0_VLINE0_DEST_MASK) ? 1u : 0u;
+    Out->FlipDest = (DchubInterruptDest2 & BC250_DCN2_DCHUB_HUBP0_FLIP_DEST_MASK) ? 1u : 0u;
+}
+
+/* ---- 8. D12 ------------------------------------------------------------------- */
+
+uint32_t Bc250DcnAuxPadI2cModeOffValue(uint32_t Read)
+{
+    /* Lei 6: so' o bit 12 (DDC_PAD1_I2CMODE) vai a 0, como hw_ddc.c set_config. */
+    return (Read & ~BC250_DCN2_GPIO_DDC_PAD1_I2CMODE) | (0u & BC250_DCN2_GPIO_DDC_PAD1_I2CMODE);
+}
+
+uint32_t Bc250DcnAuxPadHardwareModeValue(uint32_t Read)
+{
+    uint32_t mask = BC250_DCN2_GPIO_DDC1CLK_MASK | BC250_DCN2_GPIO_DDC1DATA_MASK |
+        BC250_DCN2_GPIO_AUX_PAD1_MODE;
+    /* Lei 6: CLK/DATA MASK vao a 0 (pino dirigido por hardware), AUX_PAD1_MODE
+     * vai a 1 (pad em modo AUX); o resto do registrador e' preservado. */
+    uint32_t value = BC250_DCN2_GPIO_AUX_PAD1_MODE;
+    return (Read & ~mask) | (value & mask);
+}
+
+/* ---- 9. D19 ------------------------------------------------------------------- */
+
+uint32_t Bc250DcnComputeVTotalForRefresh(
+    uint32_t CurrentVTotal, uint32_t CurrentRefreshMilliHz,
+    uint32_t DesiredRefreshMilliHz, uint32_t *OutNewVTotal)
+{
+    uint64_t newTotal;
+    if (OutNewVTotal == 0) return 0xFFFFFFFFu;
+    *OutNewVTotal = 0u;
+    if (DesiredRefreshMilliHz < 24000u || DesiredRefreshMilliHz > 240000u) return BC250_DCN_VTOTAL_REFUSE_RANGE;
+    if (CurrentVTotal == 0u || CurrentRefreshMilliHz == 0u) return BC250_DCN_VTOTAL_REFUSE_INPUT;
+    if (DesiredRefreshMilliHz >= CurrentRefreshMilliHz) return BC250_DCN_VTOTAL_REFUSE_NOT_LOWER;
+    /* new_total = current_total * current_refresh / desired_refresh, arredondado. */
+    newTotal = ((uint64_t)CurrentVTotal * (uint64_t)CurrentRefreshMilliHz +
+        (uint64_t)DesiredRefreshMilliHz / 2u) / (uint64_t)DesiredRefreshMilliHz;
+    if (newTotal == 0u || newTotal > (uint64_t)BC250_DCN2_TOTAL_MASK) return BC250_DCN_VTOTAL_REFUSE_OVERFLOW;
+    *OutNewVTotal = (uint32_t)newTotal;
+    return 0u;
+}
+
+uint64_t Bc250DcnElapsedMs(int64_t StartQpc, int64_t NowQpc, int64_t FreqQpc)
+{
+    int64_t delta;
+    if (FreqQpc <= 0) return 0ull;
+    delta = NowQpc - StartQpc;
+    if (delta <= 0) return 0ull;
+    return (uint64_t)((delta * 1000LL) / FreqQpc);
 }

@@ -34,6 +34,7 @@ void Bc250VmidPoolInitialize(BC250_VMID_POOL *Pool)
         Pool->Entries[i].InstallState = BC250_VMID_POOL_INSTALL_NEVER;
         Pool->Entries[i].LastInstallStatus = BC250_GCVM_VMID8_BAD_ARGUMENT;
         Pool->Entries[i].Generation = 0u;
+        Pool->Entries[i].FreedStamp = 0u;
         Pool->RetainedRoots[i].RootPhysical = 0ull;
         Pool->RetainedRoots[i].Context = NULL;
         Pool->RetainedRoots[i].Generation = 0u;
@@ -43,6 +44,7 @@ void Bc250VmidPoolInitialize(BC250_VMID_POOL *Pool)
     Pool->FreeCount = 0u;
     Pool->ExhaustedCount = 0u;
     Pool->NextGeneration = 1u;
+    Pool->ReleaseClock = 0u;
 }
 
 BC250_VMID_POOL_STATUS Bc250VmidPoolLookup(
@@ -87,15 +89,31 @@ BC250_VMID_POOL_STATUS Bc250VmidPoolAcquire(
         }
     }
 
-    for (i = 0u; i < BC250_VMID_COUNT; ++i) {
-        /*
-         * Reservado NUNCA entra no pool, nem quando tudo mais acabou. O VMID 0
-         * e' do microengine MEC (tradutor da propria fila), 7 do usuario, 8 da
-         * paginacao e 9 do compute -- todos medidos, nao supostos.
-         */
-        if (Bc250VmidIsReserved(i) != 0u) continue;
-        if (Pool->Entries[i].Context != NULL) continue;
-
+    /*
+     * C07 (doc 764): escolhe o VMID livre devolvido ha mais tempo (nunca
+     * usado primeiro; empate pelo menor numero), como amdgpu_vmid_grab
+     * (lista LRU) e o pool do Nagi (vmid_pool.h). Ate a 301 era o livre de
+     * numero mais baixo: o VMID que um processo acabou de devolver voltava
+     * no proximo contexto novo, que e' onde a trava se concentra (doc 707).
+     */
+    {
+        uint32_t best = BC250_VMID_COUNT;
+        for (i = 0u; i < BC250_VMID_COUNT; ++i) {
+            /*
+             * Reservado NUNCA entra no pool, nem quando tudo mais acabou. O VMID 0
+             * e' do microengine MEC (tradutor da propria fila), 7 do usuario, 8 da
+             * paginacao e 9 do compute -- todos medidos, nao supostos.
+             */
+            if (Bc250VmidIsReserved(i) != 0u) continue;
+            if (Pool->Entries[i].Context != NULL) continue;
+            if (best == BC250_VMID_COUNT ||
+                Pool->Entries[i].FreedStamp < Pool->Entries[best].FreedStamp) {
+                best = i;
+            }
+        }
+        i = best;
+    }
+    if (i < BC250_VMID_COUNT) {
         Pool->Entries[i].Context = Context;
         Pool->Entries[i].Vmid = i;
         Pool->Entries[i].RootPhysical = 0ull;
@@ -151,6 +169,7 @@ BC250_VMID_POOL_STATUS Bc250VmidPoolRelease(
         Pool->Entries[i].InstalledRootPhysical = 0ull;
         Pool->Entries[i].InstallState = BC250_VMID_POOL_INSTALL_NEVER;
         Pool->Entries[i].LastInstallStatus = BC250_GCVM_VMID8_BAD_ARGUMENT;
+        Pool->Entries[i].FreedStamp = ++Pool->ReleaseClock;
         Pool->InUseMask &= ~(1u << i);
         ++Pool->FreeCount;
         return BC250_VMID_POOL_OK;

@@ -5,6 +5,8 @@
 #include "../core/bc250_hdp_contract.h"
 #include "../core/bc250_mmhub_gart.h"
 #include "../core/bc250_sdma1_bringup.h"
+#include "../core/bc250_gfx_ring_transaction.h"
+#include "../core/bc250_c01_init_parity.h"
 
 static void Bc250MmioTopologyClearMapping(
     BC250_MMIO_TOPOLOGY_CONTEXT *Context)
@@ -233,6 +235,8 @@ static uint32_t Bc250MmioTopologyMmhubP3bWriteAllowed(uint32_t ByteOffset)
 static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        /* C01 (doc 764): snapshot e readback do que o C01 escreve. */
+        Bc250C01InitParityWriteAllowed(ByteOffset) ||
         Bc250MmioTopologyMmhubReadAllowed(ByteOffset) ||
         Bc250MmioTopologyGoldenReadAllowed(ByteOffset) ||
         /* 4c (doc 567): REQ/ACK do engine 1 so' em LEITURA -- quem escreve o
@@ -524,6 +528,12 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        /* C05 (doc 764): SQ_CMD, ESCRITA. Unico escritor: Bc250ActiveC05WaveKill,
+         * no quiesce do TDR do GFX (gfx_v10_0_ring_soft_recovery). */
+        ByteOffset == BC250_GFX_REG_SQ_CMD ||
+        /* C01 (doc 764): constantes do gfx_v10_0_constants_init e afins. Unicos
+         * escritores: Bc250ActiveC01ApplyInitParity/RestoreInitParity. */
+        Bc250C01InitParityWriteAllowed(ByteOffset) ||
         Bc250MmioTopologyMmhubP3bWriteAllowed(ByteOffset) ||
         Bc250MmioTopologyG1GoldenWriteAllowed(ByteOffset) ||
         /*

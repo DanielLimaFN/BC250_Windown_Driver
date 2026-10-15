@@ -997,7 +997,8 @@ static VOID Bc250SdmaRecordBltFailure(
 static BOOLEAN Bc250SdmaPresentBltCore(
     _In_ uint64_t SourceGpuAddress,
     _In_ uint64_t DestGpuAddress,
-    _In_ ULONG ByteCount)
+    _In_ ULONG ByteCount,
+    _In_ BOOLEAN FlushGartFirst)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     uint32_t packets[128] = { 0 };
@@ -1037,6 +1038,16 @@ static BOOLEAN Bc250SdmaPresentBltCore(
     curSrc = SourceGpuAddress;
     curDst = DestGpuAddress;
     cursor = 0u;
+    /* COMP.VA (doc 743): janela da GART regravada pela CPU; invalida a VMID 0
+     * no anel, em ordem, antes da copia que a usa. */
+    if (FlushGartFirst &&
+        Bc250SdmaEmitGartInvalidate(packets, 128u, &cursor,
+            BC250_SDMA_INVALIDATE_ENGINE) != BC250_SDMA_OK) {
+        InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
+        Bc250SdmaRecordBltFailure(BC250_SDMA_BLT_FAIL_EMIT, SourceGpuAddress,
+            DestGpuAddress, ByteCount, 0u, 0u, 0u);
+        return FALSE;
+    }
 
     while (remainingBytes > 0) {
         ULONG chunkSize = (remainingBytes > BC250_SDMA_COPY_MAX_BYTES) ?
@@ -1189,6 +1200,7 @@ static BOOLEAN Bc250SdmaPresentBltCore(
     }
     return FALSE;
 #else
+    UNREFERENCED_PARAMETER(FlushGartFirst);
     UNREFERENCED_PARAMETER(SourceGpuAddress);
     UNREFERENCED_PARAMETER(DestGpuAddress);
     UNREFERENCED_PARAMETER(ByteCount);
@@ -1204,7 +1216,8 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
     _In_ ULONG DestX,
     _In_ ULONG DestY,
     _In_ ULONG Width,
-    _In_ ULONG Height)
+    _In_ ULONG Height,
+    _In_ BOOLEAN FlushGartFirst)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     uint32_t packets[128] = { 0u };
@@ -1223,6 +1236,13 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
     if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled ||
         SourceGpuAddress == 0ull || DestGpuAddress == 0ull ||
         byteCount64 == 0ull || byteCount64 > (64ull * 1024ull * 1024ull)) {
+        InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
+        return FALSE;
+    }
+    /* COMP.VA (doc 743): mesma regra do blt linear. */
+    if (FlushGartFirst &&
+        Bc250SdmaEmitGartInvalidate(packets, 128u, &cursor,
+            BC250_SDMA_INVALIDATE_ENGINE) != BC250_SDMA_OK) {
         InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
         return FALSE;
     }
@@ -1339,6 +1359,7 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
     UNREFERENCED_PARAMETER(DestPitchBytes);
     UNREFERENCED_PARAMETER(DestX);
     UNREFERENCED_PARAMETER(DestY);
+    UNREFERENCED_PARAMETER(FlushGartFirst);
     UNREFERENCED_PARAMETER(Width);
     UNREFERENCED_PARAMETER(Height);
     return TRUE;
@@ -1364,7 +1385,7 @@ BOOLEAN Bc250SdmaPresentBlt(
     _In_ uint64_t DestGpuAddress,
     _In_ ULONG ByteCount)
 {
-    const BOOLEAN ok = Bc250SdmaPresentBltCore(SourceGpuAddress, DestGpuAddress, ByteCount);
+    const BOOLEAN ok = Bc250SdmaPresentBltCore(SourceGpuAddress, DestGpuAddress, ByteCount, FALSE);
     if (Bc250SdmaPresentTouchesScanout(DestGpuAddress)) {
         const BOOLEAN full = (ok && DestGpuAddress == g_Bc250SdmaPresent.ScanoutGpuAddress) ? TRUE : FALSE;
         g_Bc250SdmaPresent.ScanoutLastWriteFull = FALSE;
@@ -1389,9 +1410,40 @@ BOOLEAN Bc250SdmaPresentBltRect(
     _In_ ULONG Height)
 {
     const BOOLEAN ok = Bc250SdmaPresentBltRectCore(SourceGpuAddress, SourcePitchBytes,
-        DestGpuAddress, DestPitchBytes, DestX, DestY, Width, Height);
+        DestGpuAddress, DestPitchBytes, DestX, DestY, Width, Height, FALSE);
     if (Bc250SdmaPresentTouchesScanout(DestGpuAddress)) {
         /* Retangulo nunca prova "scanout inteiro = esta origem". */
+        g_Bc250SdmaPresent.ScanoutLastWriteFull = FALSE;
+        g_Bc250SdmaPresent.ScanoutLastFullSourceMc = 0ull;
+        g_Bc250SdmaPresent.ScanoutLastFullBytes = 0u;
+        InterlockedIncrement(&g_Bc250SdmaPresent.ScanoutWriteSequence);
+    }
+    return ok;
+}
+
+/*
+ * COMP.VA (doc 743): copia por uma janela da GART que a CPU acabou de
+ * regravar. Invalida a VMID 0 no anel antes da copia. Linear quando
+ * LinearBytes != 0 (pitch igual, linhas inteiras), senao retangulo. Escrita no
+ * scanout por aqui nunca prova "scanout inteiro = esta origem".
+ */
+BOOLEAN Bc250SdmaPresentBltViaGartWindow(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ ULONG SourcePitchBytes,
+    _In_ uint64_t DestGpuAddress,
+    _In_ ULONG DestPitchBytes,
+    _In_ ULONG DestX,
+    _In_ ULONG DestY,
+    _In_ ULONG Width,
+    _In_ ULONG Height,
+    _In_ ULONG LinearBytes,
+    _In_ BOOLEAN FlushGart)
+{
+    const BOOLEAN ok = (LinearBytes != 0u) ?
+        Bc250SdmaPresentBltCore(SourceGpuAddress, DestGpuAddress, LinearBytes, FlushGart) :
+        Bc250SdmaPresentBltRectCore(SourceGpuAddress, SourcePitchBytes,
+            DestGpuAddress, DestPitchBytes, DestX, DestY, Width, Height, FlushGart);
+    if (Bc250SdmaPresentTouchesScanout(DestGpuAddress)) {
         g_Bc250SdmaPresent.ScanoutLastWriteFull = FALSE;
         g_Bc250SdmaPresent.ScanoutLastFullSourceMc = 0ull;
         g_Bc250SdmaPresent.ScanoutLastFullBytes = 0u;
@@ -4275,8 +4327,21 @@ BOOLEAN Bc250SdmaPresentIhIsr(ULONG *SdmaTrapsThisCall, ULONG *GfxEopsThisCall)
                 InterlockedIncrement64(&g_Bc250SdmaPresent.IhGfxEops);
                 ++gfxEops;
             }
-        } else if (client == 0x04u && Bc250DisplayDcnIsr(src)) {
-            /* DCN.2 (doc 713): cliente DCE (OTG0 VSTARTUP 0x3C, flip do HUBP0 0x4F). */
+        } else if (client == BC250_IH_CLIENT_GRBM_CP &&
+                   (src == BC250_IH_SRC_CP_PRIV_REG || src == BC250_IH_SRC_CP_PRIV_INSTR ||
+                    src == BC250_IH_SRC_CP_BAD_OPCODE || src == BC250_IH_SRC_CP_RSVD_BIT)) {
+            /* C06 (doc 764): so' conta e guarda a entrada (DIRQL, sem log). */
+            if (src == BC250_IH_SRC_CP_PRIV_REG) InterlockedIncrement64(&g_Bc250SdmaPresent.IhCpPrivReg);
+            else if (src == BC250_IH_SRC_CP_PRIV_INSTR) InterlockedIncrement64(&g_Bc250SdmaPresent.IhCpPrivInstr);
+            else if (src == BC250_IH_SRC_CP_BAD_OPCODE) InterlockedIncrement64(&g_Bc250SdmaPresent.IhCpBadOpcode);
+            else InterlockedIncrement64(&g_Bc250SdmaPresent.IhCpRsvdBit);
+            InterlockedExchange(&g_Bc250SdmaPresent.IhCpErrLastDw0, (LONG)dw0);
+            InterlockedExchange(&g_Bc250SdmaPresent.IhCpErrLastDw1,
+                (LONG)g_Bc250SdmaPresent.IhRing[rptr / 4u + 1u]);
+        } else if (client == 0x04u &&
+                   Bc250DisplayDcnIsr(src, g_Bc250SdmaPresent.IhRing[rptr / 4u + 4u])) {
+            /* DCN.2/DCN.3 (docs 713/714): cliente DCE; o ext_id e' o src_data[0]
+             * (dw4 da entrada), como o amdgpu_dm passa a dc_interrupt_to_irq_source. */
             InterlockedIncrement64(&g_Bc250SdmaPresent.IhDcn);
         } else {
             LONG slot;
@@ -4349,6 +4414,15 @@ VOID Bc250SdmaPresentIhReport(_In_z_ const char *Why)
         g_Bc250SdmaPresent.IhGfxDpcKicks, g_Bc250SdmaPresent.IhRptr,
         g_Bc250SdmaPresent.IhWptrCpu != NULL ? *g_Bc250SdmaPresent.IhWptrCpu : 0u,
         g_Bc250SdmaPresent.IhRptrDoorbellActive ? 1u : 0u, g_Bc250SdmaPresent.IhRptrDoorbellWrites);
+    if (g_Bc250SdmaPresent.IhCpPrivReg != 0 || g_Bc250SdmaPresent.IhCpPrivInstr != 0 ||
+        g_Bc250SdmaPresent.IhCpBadOpcode != 0 || g_Bc250SdmaPresent.IhCpRsvdBit != 0) {
+        /* C06 (doc 764): dw0 = cliente/fonte/ring_id[23:16] (me=(r&0x0C)>>2, pipe=r&3). */
+        Bc250DisplayLog("[C06_CP_ERRO] priv_reg=%lld priv_instr=%lld bad_opcode=%lld rsvd_bit=%lld ultima dw0=0x%08X dw1=0x%08X (ring_id=0x%02X)\n",
+            g_Bc250SdmaPresent.IhCpPrivReg, g_Bc250SdmaPresent.IhCpPrivInstr,
+            g_Bc250SdmaPresent.IhCpBadOpcode, g_Bc250SdmaPresent.IhCpRsvdBit,
+            (unsigned)g_Bc250SdmaPresent.IhCpErrLastDw0, (unsigned)g_Bc250SdmaPresent.IhCpErrLastDw1,
+            ((unsigned)g_Bc250SdmaPresent.IhCpErrLastDw0 >> 16) & 0xFFu);
+    }
     if (g_Bc250SdmaPresent.Sdma1Attached && g_Bc250SdmaPresent.Sdma1Work != NULL) {
         LONG64 rec = 0, unal = 0, drop = 0;
         LONG64 dNoSlot = 0, dPartial = 0, dOutFull = 0, dOrphan = 0;

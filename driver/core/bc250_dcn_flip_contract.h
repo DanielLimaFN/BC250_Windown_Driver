@@ -51,10 +51,13 @@ extern "C" {
 #define BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT    0x00014030u /* mm 0x1b4c */
 #define BC250_DCN_FLIP_REG_OTG0_MASTER_UPDATE_LOCK    0x0001412Cu /* mm 0x1b8b */
 
-/* Janela mapeada pelo driver: [0xE000, 0x15400) cobre HUBP0/HUBPREQ0, cursor,
- * DPP0, OTG0 e, desde a DCN.2 (doc 713), HPD0/1 e DP_AUX0/1 (ate 0x150C8). */
-#define BC250_DCN_FLIP_WINDOW_BASE  0x0000E000u
-#define BC250_DCN_FLIP_WINDOW_BYTES 0x00007400u
+/* Janela mapeada pelo driver: [0xD800, 0x17800) cobre HUBP0/HUBPREQ0, cursor,
+ * DPP0, OTG0, HPD0/1 e DP_AUX0/1 (desde a DCN.2, doc 713, ate 0x150C8) e,
+ * ampliada para a 274 (doc 716 par.5.3, doc 718): abaixo, OTG0_INTERRUPT_DEST/
+ * DCHUB_INTERRUPT_DEST2 (D06, 0xD83C/0xD850); acima, DC_GPIO_DDC1_MASK
+ * (D12, 0x17640). */
+#define BC250_DCN_FLIP_WINDOW_BASE  0x0000D800u
+#define BC250_DCN_FLIP_WINDOW_BYTES 0x0000A000u
 
 /* Mascaras (dcn_2_0_3_sh_mask.h). */
 #define BC250_DCN_SURFACE_PIXEL_FORMAT_MASK          0x0000007Fu
@@ -144,6 +147,20 @@ uint32_t Bc250DcnFrameDelta(uint32_t FromFrame, uint32_t ToFrame);
 uint32_t Bc250DcnLatchFrameBucket(uint32_t Frames);
 uint32_t Bc250DcnLatchUsBucket(uint32_t Microseconds);
 uint32_t Bc250DcnRefreshMilliHz(uint32_t Frames, uint64_t ElapsedMicroseconds);
+
+/* Completar o flip pela propria interrupcao (doc 716 par.6.1, doc 717): o
+ * flip do HUBP0 (fonte 0x4F) so' enfileira o DPC de VSYNC (Bc250DisplayDcnIsr)
+ * e nao marca "VSYNC pendente" -- so' VSTARTUP/VUPDATE/VLINE0 marcam, e esses
+ * tres nunca chegaram ao IH (D06, doc 715). Por isso um DPC disparado so' por
+ * um flip pode nao ter nada para notificar ao DXGK; isso NAO significa que o
+ * latch nao deva ser conferido naquela chamada -- so' significa que nao ha
+ * VSYNC novo. Esta decisao e' pura, sem registrador: o sinalizador consumido
+ * do ISR (0 ou 1, por InterlockedExchange) e se a MESMA chamada do DPC
+ * resolveu um latch novo (Bc250DcnFlipPollLatch devolveu TRUE). Devolve 1 so'
+ * quando os dois sao verdadeiros, isto e', quando a propria interrupcao do
+ * flip -- nao o tique periodico de 4 ms do timer -- e' testemunha desta
+ * resolucao. */
+int Bc250DcnFlipLatchIsViaIrq(int FlipIrqDpcPendingConsumed, int LatchDetectedThisCall);
 
 #ifdef __cplusplus
 }

@@ -63,6 +63,22 @@ extern "C" {
 #define BC250_DCN2_REG_OTG0_H_SYNC_A             BC250_DCN_BYTE(0x1B2Cu)
 #define BC250_DCN2_REG_OTG0_H_SYNC_A_CNTL        BC250_DCN_BYTE(0x1B2Du)
 #define BC250_DCN2_REG_OTG0_V_TOTAL              BC250_DCN_BYTE(0x1B2Fu)
+/* doc 727 (Corrida 279): so' leitura. optc1_program_timing (dcn10_optc.c:223-229)
+ * escreve OTG_V_TOTAL e, na MESMA chamada, MIN e MAX via set_vtotal_min_max --
+ * "In case of V_TOTAL_CONTROL is on, make sure OTG_V_TOTAL_MAX e MIN sao
+ * iguais a V_TOTAL". O D19 nunca tocou nem leu estes tres; se o GOP deixou
+ * V_TOTAL_CONTROL com MIN_SEL/MAX_SEL ligado, o V_TOTAL "normal" que
+ * escrevemos pode nao ser o que realmente governa a varredura. mm de
+ * dcn_2_0_3_offset.h (0x1b30/0x1b31/0x1b33), BASE_IDX 2, igual ao V_TOTAL. */
+#define BC250_DCN2_REG_OTG0_V_TOTAL_MIN          BC250_DCN_BYTE(0x1B30u)
+#define BC250_DCN2_REG_OTG0_V_TOTAL_MAX          BC250_DCN_BYTE(0x1B31u)
+#define BC250_DCN2_REG_OTG0_V_TOTAL_CONTROL      BC250_DCN_BYTE(0x1B33u)
+/* dcn_2_0_3_sh_mask.h: OTG0_OTG_V_TOTAL_CONTROL. */
+#define BC250_DCN2_V_TOTAL_MIN_SEL               0x00000001u
+#define BC250_DCN2_V_TOTAL_MAX_SEL               0x00000002u
+#define BC250_DCN2_VTOTAL_MID_REPLACING_MAX_EN   0x00000004u
+#define BC250_DCN2_VTOTAL_MID_REPLACING_MIN_EN   0x00000008u
+#define BC250_DCN2_FORCE_LOCK_ON_EVENT           0x00000010u
 #define BC250_DCN2_REG_OTG0_V_BLANK_START_END    BC250_DCN_BYTE(0x1B36u)
 #define BC250_DCN2_REG_OTG0_V_SYNC_A             BC250_DCN_BYTE(0x1B37u)
 #define BC250_DCN2_REG_OTG0_V_SYNC_A_CNTL        BC250_DCN_BYTE(0x1B38u)
@@ -76,6 +92,21 @@ extern "C" {
 #define BC250_DCN2_REG_OTG0_CRC0_DATA_RG         BC250_DCN_BYTE(0x1B6Eu)
 #define BC250_DCN2_REG_OTG0_CRC0_DATA_B          BC250_DCN_BYTE(0x1B6Fu)
 #define BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS   BC250_DCN_BYTE(0x1B8Au)
+/* DCN.3 (doc 714): VLINE0, VSTARTUP_PARAM (so' leitura) e FMT0 (so' leitura). */
+#define BC250_DCN2_REG_OTG0_VINT0_POSITION       BC250_DCN_BYTE(0x1B62u)
+#define BC250_DCN2_REG_OTG0_VINT0_CONTROL        BC250_DCN_BYTE(0x1B63u)
+#define BC250_DCN2_REG_OTG0_VSTARTUP_PARAM       BC250_DCN_BYTE(0x1B87u)
+#define BC250_DCN2_REG_FMT0_CONTROL              BC250_DCN_BYTE(0x1840u)
+#define BC250_DCN2_REG_FMT0_BIT_DEPTH_CONTROL    BC250_DCN_BYTE(0x1841u)
+/* D06 (doc 716 par.5.1, doc 718, SO' LEITURA): roteamento das interrupcoes do
+ * cliente DCE. mm de dcn_2_0_0_offset.h (o dcn_2_0_3_offset.h nao traz o
+ * bloco dce_dc_dmu_ihc_dispdec; mesmo BASE_IDX 2, mesma formula de byte). */
+#define BC250_DCN2_REG_OTG0_INTERRUPT_DEST       BC250_DCN_BYTE(0x0154u)
+#define BC250_DCN2_REG_DCHUB_INTERRUPT_DEST2     BC250_DCN_BYTE(0x014Fu)
+/* D12 (doc 716 par.5.2, doc 718): pad DDC1/AUX0 em modo hardware/AUX
+ * (dal_ddc_open, hw_gpio.c + hw_ddc.c). mm de dcn_2_0_3_offset.h (existe
+ * tambem no 2.0.0, mesmo valor). */
+#define BC250_DCN2_REG_GPIO_DDC1_MASK            BC250_DCN_BYTE(0x28D0u)
 /* HUBPREQ0 / CURSOR0_0 (HUBP0) / CNVC_CUR0 (DPP0) */
 #define BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT   BC250_DCN_BYTE(0x0620u)
 #define BC250_DCN2_REG_HUBPREQ0_CURSOR_SETTINGS  BC250_DCN_BYTE(0x065Eu)
@@ -90,6 +121,10 @@ extern "C" {
 #define BC250_DCN2_REG_CNVC_CUR0_COLOR0          BC250_DCN_BYTE(0x0CE1u)
 #define BC250_DCN2_REG_CNVC_CUR0_COLOR1          BC250_DCN_BYTE(0x0CE2u)
 #define BC250_DCN2_REG_CNVC_CUR0_FP_SCALE_BIAS   BC250_DCN_BYTE(0x0CE3u)
+/* D23: Color Management / Gamma LUT (DPP0 / CM0) */
+#define BC250_DCN2_REG_CM0_BLNDGAM_CONTROL       BC250_DCN_BYTE(0x0D63u)
+#define BC250_DCN2_REG_CM0_BLNDGAM_LUT_INDEX     BC250_DCN_BYTE(0x0D64u)
+#define BC250_DCN2_REG_CM0_BLNDGAM_LUT_DATA      BC250_DCN_BYTE(0x0D65u)
 /* HPD0/1 (passo 8 mm) e DP_AUX0/1 (passo 0x1C mm): o DCN 2.0.3 tem dois. */
 #define BC250_DCN2_HPD_COUNT                     2u
 #define BC250_DCN2_REG_HPD_INT_STATUS(i)         BC250_DCN_BYTE(0x1F14u + 8u * (uint32_t)(i))
@@ -100,6 +135,10 @@ extern "C" {
 #define BC250_DCN2_REG_AUX_INTERRUPT_CONTROL(i)  BC250_DCN_BYTE(0x1F53u + 0x1Cu * (uint32_t)(i))
 #define BC250_DCN2_REG_AUX_SW_STATUS(i)          BC250_DCN_BYTE(0x1F54u + 0x1Cu * (uint32_t)(i))
 #define BC250_DCN2_REG_AUX_SW_DATA(i)            BC250_DCN_BYTE(0x1F56u + 0x1Cu * (uint32_t)(i))
+#define BC250_DCN2_REG_AUX_LS_STATUS(i)          BC250_DCN_BYTE(0x1F55u + 0x1Cu * (uint32_t)(i))
+#define BC250_DCN2_REG_AUX_DPHY_TX_CONTROL(i)    BC250_DCN_BYTE(0x1F59u + 0x1Cu * (uint32_t)(i))
+#define BC250_DCN2_REG_AUX_DPHY_RX_CONTROL0(i)   BC250_DCN_BYTE(0x1F5Au + 0x1Cu * (uint32_t)(i))
+#define BC250_DCN2_REG_AUX_DPHY_RX_CONTROL1(i)   BC250_DCN_BYTE(0x1F5Bu + 0x1Cu * (uint32_t)(i))
 
 /* Campos (dcn_2_0_3_sh_mask.h). */
 #define BC250_DCN2_TOTAL_MASK                    0x00007FFFu
@@ -111,6 +150,17 @@ extern "C" {
 #define BC250_DCN2_VSTARTUP_INT_EN               0x00000001u
 #define BC250_DCN2_VSTARTUP_EVENT_OCCURRED       0x00000004u
 #define BC250_DCN2_VSTARTUP_EVENT_CLEAR          0x00000010u
+#define BC250_DCN2_VSTARTUP_INT_STATUS           0x00000008u
+#define BC250_DCN2_VUPDATE_NO_LOCK_INT_EN        0x00001000u
+#define BC250_DCN2_VUPDATE_NO_LOCK_INT_STATUS    0x00008000u
+#define BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR   0x00010000u
+#define BC250_DCN2_VINT0_LINE_START_MASK         0x00007FFFu
+#define BC250_DCN2_VINT0_LINE_END_MASK           0x7FFF0000u
+#define BC250_DCN2_VINT0_LINE_END_SHIFT          16u
+#define BC250_DCN2_VINT0_INT_ENABLE              0x00000100u
+#define BC250_DCN2_VINT0_INT_STATUS              0x00010000u
+#define BC250_DCN2_VINT0_CLEAR                   0x00100000u
+#define BC250_DCN2_VSTARTUP_START_MASK           0x000003FFu
 #define BC250_DCN2_SURFACE_FLIP_INT_MASK         0x00000001u
 #define BC250_DCN2_SURFACE_FLIP_CLEAR            0x00000100u
 #define BC250_DCN2_SURFACE_FLIP_OCCURRED         0x00010000u
@@ -151,6 +201,8 @@ extern "C" {
 #define BC250_DCN2_AUX_EN                        0x00000001u
 #define BC250_DCN2_AUX_HPD_SEL_MASK              0x00700000u
 #define BC250_DCN2_AUX_HPD_SEL_SHIFT             20u
+#define BC250_DCN2_AUX_LS_READ_EN                0x00000100u
+#define BC250_DCN2_AUX_RX_RECEIVE_WINDOW_MASK    0x00000700u
 #define BC250_DCN2_AUX_SW_GO                     0x00000001u
 #define BC250_DCN2_AUX_SW_START_DELAY_MASK       0x000000F0u
 #define BC250_DCN2_AUX_SW_WR_BYTES_MASK          0x001F0000u
@@ -177,11 +229,54 @@ extern "C" {
 #define BC250_DCN2_AUX_SW_AUTOINC_DISABLE        0x80000000u
 #define BC250_DCN2_SW_CAN_ACCESS_AUX             1u
 #define BC250_DCN2_DMCU_CAN_ACCESS_AUX           2u
+/* D06 (dcn_2_0_0_sh_mask.h): OTG0_IHC_OTG_VERTICAL_INTERRUPT0_DEST bit 9,
+ * OTG0_IHC_VSTARTUP_INTERRUPT_DEST bit 16, OTG0_IHC_V_UPDATE_NO_LOCK_
+ * INTERRUPT_DEST bit 19; DCHUB_INTERRUPT_DEST2__HUBP0_IHC_FLIP_INTERRUPT_DEST
+ * bit 0. A semantica do bit (0 ou 1 = roteado ao host) e' H: o header nao
+ * documenta, e so' se decide por comparacao com a do flip, que sabemos
+ * chegar ao IH (D05). */
+#define BC250_DCN2_OTG0_VLINE0_DEST_MASK          0x00000200u
+#define BC250_DCN2_OTG0_VSTARTUP_DEST_MASK        0x00010000u
+#define BC250_DCN2_OTG0_VUPDATE_NO_LOCK_DEST_MASK 0x00080000u
+#define BC250_DCN2_DCHUB_HUBP0_FLIP_DEST_MASK     0x00000001u
+/* D12 (dcn_2_0_3_sh_mask.h DC_GPIO_DDC1_MASK): DC_GPIO_DDC1CLK_MASK bit 0,
+ * DC_GPIO_DDC1DATA_MASK bit 8, AUX_PAD1_MODE bit 16. */
+#define BC250_DCN2_GPIO_DDC1CLK_MASK              0x00000001u
+#define BC250_DCN2_GPIO_DDC1DATA_MASK             0x00000100u
+#define BC250_DCN2_GPIO_AUX_PAD1_MODE              0x00010000u
+/* C09 (doc 765): a segunda metade do hw_ddc.c set_config(MODE_AUX):
+ * DC_GPIO_AUX_CTRL_5.DDC_PAD1_I2CMODE (bit 12) a 0. mmDC_GPIO_AUX_CTRL_5 =
+ * 0x291D, BASE_IDX 2 (dcn_2_0_3_offset.h); mascara 0x00001000
+ * (dcn_2_0_3_sh_mask.h). Rastro E03 do amdgpu nesta placa: 0x0003F55A ->
+ * 0x0003E55A, e DDC1_MASK em 0xCF411010. */
+#define BC250_DCN2_REG_GPIO_AUX_CTRL_5            BC250_DCN_BYTE(0x291Du)
+#define BC250_DCN2_GPIO_DDC_PAD1_I2CMODE           0x00001000u
 
 /* Cliente e fontes do IH (irqsrcs_dcn_1_0.h, soc15_ih_clientid.h). */
 #define BC250_IH_CLIENTID_DCE                    0x04u
 #define BC250_IH_SRCID_DCN_OTG0_VSTARTUP         0x3Cu
 #define BC250_IH_SRCID_DCN_HUBP0_FLIP            0x4Fu
+/* DCN.3 (doc 714), irq_service_dcn201.c: VUPDATE1 = OTG0 VUPDATE sem lock
+ * (0x57); DC1_VLINE0 = OTG1_VERTICAL_INTERRUPT0 (0x1E, ext_id/src_data[0] 6). */
+#define BC250_IH_SRCID_DCN_OTG0_VUPDATE_NO_LOCK  0x57u
+#define BC250_IH_SRCID_DCN_OTG0_VLINE0           0x1Eu
+#define BC250_IH_CTXID_DCN_OTG0_VLINE0           6u
+
+/* Classifica uma entrada do IH do cliente DCE (to_dal_irq_source_dcn201). */
+#define BC250_DCN_IRQ_NONE      0u
+#define BC250_DCN_IRQ_VSTARTUP  1u
+#define BC250_DCN_IRQ_VUPDATE   2u
+#define BC250_DCN_IRQ_VLINE0    3u
+#define BC250_DCN_IRQ_FLIP      4u
+uint32_t Bc250DcnIrqClassify(uint32_t SrcId, uint32_t ExtId);
+
+/* optc1_setup_vertical_interrupt0: linha de inicio e fim (fim = inicio + 1). */
+uint32_t Bc250DcnVline0Position(uint32_t StartLine, uint32_t VTotal);
+
+/* dcn10_aux_initialize (dcn10_link_encoder.c): AUX_HPD_SEL = hpd, LS_READ_EN 0;
+ * e AUX_DPHY_RX_CONTROL0.AUX_RX_RECEIVE_WINDOW = 0. */
+uint32_t Bc250DcnAuxInitControl(uint32_t ReadControl, uint32_t HpdSel);
+uint32_t Bc250DcnAuxInitRxControl0(uint32_t ReadRxControl0);
 
 /* Acoes AUX (dc_ddc_types.h). */
 #define BC250_AUX_ACTION_I2C_WRITE               0x00u
@@ -244,11 +339,27 @@ int Bc250DcnEdidFindTiming(const uint8_t Block[128], const BC250_DCN_TIMING *Tim
 #define BC250_DCN_CURSOR_LPC_16               4u   /* CURSOR_LINE_PER_CHUNK_16 (1..32 px) */
 #define BC250_DCN_POINTER_MONOCHROME          0x1u
 #define BC250_DCN_POINTER_COLOR               0x2u
+#define BC250_DCN_POINTER_MASKED_COLOR        0x4u
 
-/* Converte a forma do WDDM para ARGB 64x64 (pitch 256 B). Cor: copia ARGB.
- * Monocromatico (AND depois XOR, 1 bpp): AND=1/XOR=0 transparente, AND=0
- * preto/branco pelo XOR, AND=1/XOR=1 (inverter) vira branco opaco (o modo
- * de inversao nao existe em ARGB; declarado). 0 = recusado. */
+/* Resultado da conversao. */
+#define BC250_DCN_CURSOR_REFUSED              0   /* forma invalida ou grande demais */
+#define BC250_DCN_CURSOR_OK                   1
+#define BC250_DCN_CURSOR_NEEDS_XOR            2   /* tem pixel de inversao: fica no software */
+
+/* Converte a forma do WDDM para ARGB 64x64 (pitch 256 B), DCN.3 (doc 714).
+ * Layout (DXGKARG_SETPOINTERSHAPE no WDK, e VBoxMPWddm.cpp, que le o XOR em
+ * pPixels + Height * Pitch):
+ *   Cor: ARGB 32 bpp, Width x Height.
+ *   Monocromatico: mascara AND 1 bpp Width x Height, depois XOR do mesmo
+ *     tamanho (2*Height linhas). AND=1/XOR=0 transparente; AND=0 preto ou
+ *     branco pelo XOR; AND=1/XOR=1 inverte a tela.
+ *   Cor mascarada: ARGB com a mascara no alfa (so' 0 ou 0xFF). 0 = o RGB
+ *     substitui a tela (opaco); 0xFF = XOR do RGB com a tela (RGB 0 =
+ *     transparente).
+ * A inversao (XOR com a tela) nao existe no modo ARGB do cursor; o modo
+ * COLOR_1BIT_AND/MONO do DCN nao tem layout de bits no upstream ("todo:
+ * clarify" em dpp2_set_cursor_attributes). Forma com inversao devolve
+ * NEEDS_XOR e o Windows desenha por software, sem aproximar. */
 int Bc250DcnCursorConvert(uint32_t Flags, uint32_t Width, uint32_t Height, uint32_t Pitch,
     const uint8_t *Pixels, uint32_t *Dst64x64);
 
@@ -286,6 +397,66 @@ uint32_t Bc250DcnAuxComposeHeader(uint32_t Action, uint32_t Address, uint32_t Le
 #define BC250_AUX_REPLY_INVALID   5u
 /* Primeiro byte da resposta, ja deslocado (>> 4) como em read_channel_reply. */
 uint32_t Bc250DcnAuxDecodeReply(uint32_t ReplyNibble);
+
+/* ---- 7. D06: roteamento das interrupcoes (so' leitura) ----------------------- */
+typedef struct BC250_DCN_IRQ_DEST {
+    uint32_t VstartupDest;       /* OTG0_INTERRUPT_DEST bit 16 */
+    uint32_t VupdateNoLockDest;  /* OTG0_INTERRUPT_DEST bit 19 */
+    uint32_t Vline0Dest;         /* OTG0_INTERRUPT_DEST bit 9 */
+    uint32_t FlipDest;           /* DCHUB_INTERRUPT_DEST2 bit 0 (HUBP0) */
+} BC250_DCN_IRQ_DEST;
+
+/* Pura: so' decodifica os quatro bits dos dois registradores lidos (doc 716
+ * par.5.1, doc 718). Nao decide nada por si; serve para comparar a rota do
+ * flip (chega ao IH, D05) contra as tres que nao chegam (D06, doc 715). */
+void Bc250DcnIrqDestDecode(uint32_t OtgInterruptDest, uint32_t DchubInterruptDest2,
+    BC250_DCN_IRQ_DEST *Out);
+
+/* ---- 8. D12: pad DDC1/AUX0 em modo hardware/AUX ------------------------------ */
+/* Pura (Lei 6): zera DC_GPIO_DDC1CLK_MASK/DC_GPIO_DDC1DATA_MASK (pino
+ * dirigido por hardware, nao mascarado por software) e liga AUX_PAD1_MODE
+ * (pad em modo AUX, nao DDC/I2C), preservando o resto do registrador -- como
+ * dal_ddc_open(GPIO_MODE_HARDWARE, MODE_AUX) (hw_gpio.c dal_hw_gpio_config_mode
+ * caso GPIO_MODE_HARDWARE para os dois pinos + hw_ddc.c set_config caso
+ * GPIO_DDC_CONFIG_TYPE_MODE_AUX). Os blocos dc_gpio_aux_ctrl_5/phy_aux_cntl
+ * de hw_ddc.c nao existem no DCN 2.x (guardados por ponteiro nulo no
+ * upstream) e nao tem equivalente aqui (Q, nao inventar). */
+uint32_t Bc250DcnAuxPadHardwareModeValue(uint32_t Read);
+/* C09 (doc 765): DC_GPIO_AUX_CTRL_5 com DDC_PAD1_I2CMODE a 0, resto preservado. */
+uint32_t Bc250DcnAuxPadI2cModeOffValue(uint32_t Read);
+
+/* ---- 9. D19: troca de refresh no mesmo modo (so' V_TOTAL) ------------------- */
+/* Motivos de recusa (bitmask; 0 = elegivel). */
+#define BC250_DCN_VTOTAL_REFUSE_RANGE          0x01u /* refresh pedido fora de [24, 240] Hz */
+#define BC250_DCN_VTOTAL_REFUSE_NOT_LOWER      0x02u /* so' suporta diminuir o refresh (aumentar V_TOTAL) */
+#define BC250_DCN_VTOTAL_REFUSE_OVERFLOW       0x04u /* V_TOTAL novo nao cabe em 15 bits (BC250_DCN2_TOTAL_MASK) */
+#define BC250_DCN_VTOTAL_REFUSE_INPUT          0x08u /* VTotal/refresh atuais invalidos (zero) */
+
+/* optc1_program_timing: blank_start = total - front_porch, independente de
+ * V_TOTAL; o sync (OTG0_V_SYNC_A) e' um registrador proprio, tambem
+ * independente de V_TOTAL. Logo mudar SO' V_TOTAL so' estica (ou encolhe) o
+ * trecho entre blank_start e o total -- nunca move blank nem sync. Esta
+ * funcao so' permite DIMINUIR o refresh (aumentar V_TOTAL): diminuir V_TOTAL
+ * poderia encolher esse trecho a ponto de invadir o sync, e essa direcao
+ * fica fora do escopo (doc 716 par.6.4, proposto para a 275). Pura: so'
+ * aritmetica, sem registrador. */
+uint32_t Bc250DcnComputeVTotalForRefresh(
+    uint32_t CurrentVTotal, uint32_t CurrentRefreshMilliHz,
+    uint32_t DesiredRefreshMilliHz, uint32_t *OutNewVTotal);
+
+/* ---- 10. D19b: duracao real da janela com V_TOTAL alterado (doc 723/724) --- */
+/* Corrida 275: operador relatou tela cheia de artefatos no bind, nao mapeada
+ * no criterio da 275. O proprio Bc250Dcn2VTotalProve mede duas vezes
+ * (Bc250Dcn2MeasureTiming, ~200 ms de KeDelayExecutionThread cada) com o
+ * V_TOTAL alterado entre a 1a e a 2a medida -- ou seja, ~400 ms de dwell time
+ * com o monitor sincronizado num V_TOTAL diferente do GOP, antes de
+ * devolver. Isso e' candidato forte (H, nao P0 ainda) para a duracao
+ * perceptivel do artefato relatado. Esta funcao pura so' calcula o elapsed em
+ * ms entre dois QPC, para logar a duracao real (nao so' a ordem das linhas)
+ * e permitir correlacionar com o relato do operador na proxima corrida.
+ * Fail-safe: frequencia <=0 ou Now antes de Start devolve 0 (nunca negativo
+ * nem divide por zero). */
+uint64_t Bc250DcnElapsedMs(int64_t StartQpc, int64_t NowQpc, int64_t FreqQpc);
 
 #ifdef __cplusplus
 }

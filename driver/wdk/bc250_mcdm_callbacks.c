@@ -131,6 +131,16 @@ VOID Bc250McdmInstallPlatformProbe(
     InterlockedExchangePointer((PVOID volatile *)&g_Bc250PlatformProbe,
         (PVOID)Probe);
 }
+
+/* SMU.1: sonda de clock GFX do SMU; NULL = nada a medir. */
+static BC250_MCDM_SMU_CLOCK_PROBE g_Bc250SmuClockProbe;
+
+VOID Bc250McdmInstallSmuClockProbe(
+    _In_opt_ BC250_MCDM_SMU_CLOCK_PROBE Probe)
+{
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250SmuClockProbe,
+        (PVOID)Probe);
+}
 /* I.SDMA0 / I.CG (doc 556): sondas somente leitura; NULL = nada a medir. */
 static BC250_MCDM_TRACE_WORDS_PROBE g_Bc250Sdma0Probe;
 static BC250_MCDM_TRACE_WORDS_PROBE g_Bc250ClockGatingProbe;
@@ -1326,6 +1336,18 @@ static VOID Bc250PagingTraceThread(_In_ PVOID Context)
          * KMD + 5 leituras de status do SDMA1), 1 por segundo, para o monitor.
          * Ja' rodou nas corridas 199-236. Clock gating e heartbeat seguem fora. */
         Bc250PlatformSampleTick(writerTick);
+        /* SMU.1 / SMU.2 / SMU.3: Consulta periodica do clock GFX, tensao, versao FW/IF e features SMU a cada 2 s */
+        if (writerTick > 0u && (writerTick % 20u) == 0u) {
+            BC250_MCDM_SMU_CLOCK_PROBE smuProbe = (BC250_MCDM_SMU_CLOCK_PROBE)InterlockedCompareExchangePointer(
+                (PVOID volatile *)&g_Bc250SmuClockProbe, NULL, NULL);
+            if (smuProbe != NULL) {
+                UINT32 clk = 0u, vid = 0u, smuVer = 0u, ifVer = 0u, feat = 0u, pstate = 0u, tgtClk = 0u;
+                if (smuProbe(&clk, &vid, &smuVer, &ifVer, &feat, &pstate, &tgtClk) && clk > 0u) {
+                    Bc250DisplayLog("[SMU1] GFXCLK=%u MHz VDDGFX=%u mV SMU_VER=0x%08X IF_VER=0x%08X FEAT=0x%08X PSTATE=%u TARGET_CLK=%u MHz\n",
+                        clk, vid, smuVer, ifVer, feat, pstate, tgtClk);
+                }
+            }
+        }
 #endif
 #else
         /* DX.90: depois do BPX6/BCR1, para que eles saiam mesmo se o GPU parar. */
@@ -3046,6 +3068,9 @@ static NTSTATUS Bc250McdmBuildPagingBufferBody(
     return dispatchStatus;
 }
 
+/* TDRLOG.1: teto de linhas das DDIs chamadas com a janela do TDR aberta. */
+static volatile LONG s_Bc250TdrWindowDdiLines = 0;
+
 NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     CONST HANDLE hAdapter,
     DXGKARG_BUILDPAGINGBUFFER *pBuildPagingBuffer)
@@ -3055,6 +3080,9 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     UNREFERENCED_PARAMETER(operation); /* a migalha vira no-op na suite offline */
     ULONG crumb = Bc250CrumbBeforeBank(
         BC250_CRUMB_SITE_PAGING_DDI, operation, BC250_CRUMB_BANK_PAGING);
+    if (Bc250TdrWindowIsOpen() && InterlockedIncrement(&s_Bc250TdrWindowDdiLines) <= 48) {
+        Bc250TdrStepRam("janela do TDR: BuildPagingBuffer Op=%lu", (unsigned long)operation);
+    }
     /*
      * DX.85 -- A INSTRUMENTACAO DA DX.83 TRAVAVA A THREAD DE PAGINACAO.
      *
@@ -3857,6 +3885,9 @@ NTSTATUS APIENTRY Bc250McdmPreemptCommand(
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_PREEMPT_COMMAND);
     BC250_MCDM_RUNTIME_CAPS caps;
+    if (Bc250TdrWindowIsOpen() && InterlockedIncrement(&s_Bc250TdrWindowDdiLines) <= 48) {
+        Bc250TdrStepRam("janela do TDR: PreemptCommand");
+    }
     const LONG seq = InterlockedIncrement(&s_Bc250PreemptCalls);
     const BOOLEAN logIt = Bc250PreemptShouldLog(seq);
     NTSTATUS capsStatus;
@@ -4087,11 +4118,15 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->PointerCaps.Value = 0u;
         caps->MaxPointerWidth = 0u;
         caps->MaxPointerHeight = 0u;
-        /* DCN.2 item 4 (doc 713): cursor de cor (ARGB) por hardware, ate 64x64,
-         * so' com a chave e o buffer de VRAM reservado. */
+        /* DCN.2 item 4 (doc 713): cursor por hardware ate 64x64, so' com a
+         * chave e o buffer de VRAM reservado. DCN.3 (doc 714): tambem
+         * monocromatico e cor mascarada; forma com inversao e' recusada e fica
+         * no software do Windows. */
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
         if (Bc250DisplayDcnCursorReady() != 0u) {
+            caps->PointerCaps.Monochrome = 1u;
             caps->PointerCaps.Color = 1u;
+            caps->PointerCaps.MaskedColor = 1u;
             caps->MaxPointerWidth = 64u;
             caps->MaxPointerHeight = 64u;
         }
@@ -4427,8 +4462,8 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
                 ((BYTE *)out->pSegmentDescriptor + out->SegmentDescriptorStride);
             RtlZeroMemory(gart, sizeof(*gart));
             gart->BaseAddress.QuadPart = 0x100000000ull; /* 4GB base GPU logica */
-            gart->Size = 2048ull * 1024 * 1024;          /* 2048 MB GART aperture (modelo UMA GDDR6) */
-            gart->CommitLimit = 2048ull * 1024 * 1024;
+            gart->Size = 12288ull * 1024 * 1024;         /* 12288 MB (12 GB) GART aperture (modelo APU GDDR6 unificada) */
+            gart->CommitLimit = 12288ull * 1024 * 1024;
             gart->Flags.Aperture = 1u;
             gart->Flags.NonLocalBudgetGroup = 1u;
         }
@@ -4455,7 +4490,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         out->PagingBufferSegmentId = 2u;
         out->PagingBufferSize = 0x10000u;
         out->PagingBufferPrivateDataSize = 0u;
-        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: %u segments filled (VRAM=0x%llX, GART=2048MB, PagingSeg=2, VRAM_SEM_CPU=0x%llX em 0x%llX)\n",
+        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: %u segments filled (VRAM=0x%llX, GART=12288MB, PagingSeg=2, VRAM_SEM_CPU=0x%llX em 0x%llX)\n",
             segmentCount, (unsigned long long)segment->Size,
             (unsigned long long)runtimeCaps.HiddenSegmentBytes,
             (unsigned long long)runtimeCaps.HiddenSegmentBaseOffset);
@@ -4564,6 +4599,10 @@ NTSTATUS APIENTRY Bc250McdmQueryEngineStatus(
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_ENGINE_STATUS);
     BC250_MCDM_RUNTIME_CAPS caps;
+    if (Bc250TdrWindowIsOpen() && InterlockedIncrement(&s_Bc250TdrWindowDdiLines) <= 48) {
+        Bc250TdrStepRam("janela do TDR: QueryEngineStatus Node=%lu",
+            pQueryEngineStatus != NULL ? (unsigned long)pQueryEngineStatus->NodeOrdinal : 0xFFFFFFFFul);
+    }
 
     if (pQueryEngineStatus == NULL ||
         pQueryEngineStatus->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
@@ -4659,8 +4698,12 @@ NTSTATUS APIENTRY Bc250McdmResetFromTimeout(CONST HANDLE hAdapter)
         return STATUS_NOT_SUPPORTED;
     }
 
+    InterlockedExchange(&s_Bc250TdrWindowDdiLines, 0);
+    Bc250TdrWindowSet(TRUE);
+    Bc250TdrStep("ResetFromTimeout ENTRADA: vai chamar o quiesce (SDMA0, GFX, MEC)");
     Bc250DisplayLog("[McdmResetFromTimeout] TDR: quiesce fisico do SDMA0 iniciado\n");
     if (g_Bc250TdrQuiesce == NULL || !g_Bc250TdrQuiesce()) {
+        Bc250TdrStep("ResetFromTimeout SAIDA: quiesce NAO executado -> DEVICE_NOT_READY");
         /*
          * Sem transporte nao houve quiesce. Devolver sucesso aqui faria o
          * dxgkrnl acreditar que a engine parou -- exatamente a mentira que
@@ -4671,6 +4714,7 @@ NTSTATUS APIENTRY Bc250McdmResetFromTimeout(CONST HANDLE hAdapter)
     }
 
     Bc250DisplayLog("[McdmResetFromTimeout] TDR: adaptador quiescido; RPTR/WPTR/STATUS/ERR_LOG sairam na linha TDR_QUIESCE do executor\n");
+    Bc250TdrStep("ResetFromTimeout SAIDA: quiesce OK, devolvendo SUCCESS ao dxgkrnl");
     return STATUS_SUCCESS;
 }
 
@@ -4680,13 +4724,18 @@ NTSTATUS APIENTRY Bc250McdmRestartFromTimeout(CONST HANDLE hAdapter)
         return STATUS_NOT_SUPPORTED;
     }
 
+    Bc250TdrStep("RestartFromTimeout ENTRADA: vai chamar o restart (SDMA0, GFX/GFXRST2, MEC)");
     Bc250DisplayLog("[McdmRestartFromTimeout] TDR: rearmando o SDMA0 e exigindo prova fisica\n");
     if (g_Bc250TdrRestart == NULL || !g_Bc250TdrRestart()) {
+        Bc250TdrStep("RestartFromTimeout SAIDA: engine NAO voltou -> DEVICE_NOT_READY");
+        Bc250TdrWindowSet(FALSE);
         Bc250DisplayLog("[McdmRestartFromTimeout] TDR: a engine NAO voltou -- devolvendo STATUS_DEVICE_NOT_READY em vez de declarar adaptador pronto\n");
         return STATUS_DEVICE_NOT_READY;
     }
 
     Bc250DisplayLog("[McdmRestartFromTimeout] TDR: SDMA0 e CP_RB0 provados fisicamente; MEC com readback coerente; fences abortadas reconciliadas; adaptador aceita submissao novamente\n");
+    Bc250TdrStep("RestartFromTimeout SAIDA: tudo provado, SUCCESS");
+    Bc250TdrWindowSet(FALSE);
     return STATUS_SUCCESS;
 }
 
@@ -4737,6 +4786,10 @@ NTSTATUS APIENTRY Bc250McdmSubmitCommandVirtual(
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_SUBMIT_COMMAND_VIRTUAL);
     BC250_MCDM_RUNTIME_CAPS caps;
+    if (Bc250TdrWindowIsOpen() && InterlockedIncrement(&s_Bc250TdrWindowDdiLines) <= 48) {
+        Bc250TdrStepRam("janela do TDR: SubmitCommandVirtual Node=%lu",
+            pSubmitCommand != NULL ? (unsigned long)pSubmitCommand->NodeOrdinal : 0xFFFFFFFFul);
+    }
     if (hAdapter == NULL || pSubmitCommand == NULL ||
         pSubmitCommand->hContext == NULL ||
         pSubmitCommand->DmaBufferSize == 0u ||

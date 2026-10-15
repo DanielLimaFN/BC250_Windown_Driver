@@ -117,6 +117,15 @@ static int Bc250RunDcnFlipContractTest(void)
     CHECK(Bc250DcnRefreshMilliHz(605u, 10000000ull) == 60500u, "60,5 Hz medidos na 251b");
     CHECK(Bc250DcnRefreshMilliHz(10u, 0ull) == 0u, "sem tempo = 0");
 
+    /* 8. Completar o flip pela interrupcao (doc 716/718): so' conta via IRQ
+     * quando o sinalizador do ISR estava ligado E esta mesma chamada
+     * resolveu um latch novo. As quatro combinacoes da tabela verdade. */
+    CHECK(Bc250DcnFlipLatchIsViaIrq(0, 0) == 0, "sem flag e sem latch: nao e' via IRQ");
+    CHECK(Bc250DcnFlipLatchIsViaIrq(1, 0) == 0, "flag ligada mas sem latch novo: nao conta");
+    CHECK(Bc250DcnFlipLatchIsViaIrq(0, 1) == 0, "latch novo so' pelo tique de 4 ms: nao e' via IRQ");
+    CHECK(Bc250DcnFlipLatchIsViaIrq(1, 1) == 1, "flag ligada e latch novo na mesma chamada: via IRQ");
+    CHECK(Bc250DcnFlipLatchIsViaIrq(-1, 1) == 1, "qualquer valor nao-zero da flag conta como ligada");
+
     return 0;
 }
 

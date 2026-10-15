@@ -1196,6 +1196,38 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo VMID POOL: OK ^(12 slots, reservados 0/7/8/9 medidos, exaustao falha fechada^)
 
+echo [cc] dpm_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dpm_contract_test.obj" "%ROOTDIR%\driver\tests\dpm_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dpm_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dpm_contract_test.exe" ^
+  "%ODIR%\dpm_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\dpm_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dpm_contract_test^) - Linha/Codigo: %ERRORLEVEL%
+  exit /b 1
+)
+echo DPM CONTRACT: OK ^(C08: sobe pela carga, desce com histerese, teto termico 87/90/82 C, sem oscilacao^)
+
+echo [cc] dcn_scale_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_scale_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_scale_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_scale_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_scale_contract_test.exe" ^
+  "%ODIR%\dcn_scale_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\dcn_scale_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_scale_contract_test^) - Linha/Codigo: %ERRORLEVEL%
+  exit /b 1
+)
+echo DCN SCALE CONTRACT: OK ^(C10: modos de largura multipla de 64, escalas por tamanho, recout/razoes/inits/taps, line buffer e filtro do upstream^)
+
 echo [cc] gcvm_vmid8_transaction_test.c
 cl %CFLAGS% /Fo"%ODIR%\gcvm_vmid8_transaction_test.obj" "%ROOTDIR%\driver\tests\gcvm_vmid8_transaction_test.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1

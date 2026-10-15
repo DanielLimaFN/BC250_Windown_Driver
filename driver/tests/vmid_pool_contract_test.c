@@ -87,6 +87,30 @@ static int Run(void)
     CHECK(g_pool.InUseMask == 0u);
     CHECK(g_pool.AllocCount == 0u);
     CHECK(g_pool.ExhaustedCount == 0u);
+    /*
+     * C07 (doc 764): LRU como o amdgpu. O VMID devolvido agora NAO volta no
+     * proximo contexto enquanto houver outro livre que nunca foi usado ou foi
+     * devolvido antes. Mutacao: voltar a "menor livre" reprova aqui.
+     */
+    {
+        uint32_t first = BC250_VMID_COUNT, second = BC250_VMID_COUNT, third = BC250_VMID_COUNT;
+        uint32_t rel = BC250_VMID_COUNT, again2 = 0u;
+        CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(501u), &first, &again2) == BC250_VMID_POOL_OK);
+        CHECK(Bc250VmidPoolRelease(&g_pool, FakeCtx(501u), &rel) == BC250_VMID_POOL_OK);
+        CHECK(rel == first);
+        CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(502u), &second, &again2) == BC250_VMID_POOL_OK);
+        CHECK(second != first);
+        CHECK(Bc250VmidPoolRelease(&g_pool, FakeCtx(502u), &rel) == BC250_VMID_POOL_OK);
+        /* com todos os nunca-usados ocupados, volta o devolvido HA MAIS TEMPO */
+        for (i = 0u; i < 10u; ++i) {
+            uint32_t v = BC250_VMID_COUNT;
+            CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(600u + i), &v, &again2) == BC250_VMID_POOL_OK);
+            CHECK(v != first && v != second);
+        }
+        CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(700u), &third, &again2) == BC250_VMID_POOL_OK);
+        CHECK(third == first);
+        Bc250VmidPoolInitialize(&g_pool);
+    }
 
     /* --- alocacao nunca devolve reservado --- */
     for (i = 0u; i < 12u; ++i) {

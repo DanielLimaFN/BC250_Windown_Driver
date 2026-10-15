@@ -7,52 +7,642 @@
 <script src="telemetry.js" defer></script><script src="assets/board.js" defer></script><script src="donations.js" defer></script><script src="donation-ui.js" defer></script><script src="app.js" defer></script>
 <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="danieldelima" data-description="Support me on Buy me a coffee!" data-message="" data-color="#FF5F5F" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
 </head>
-<body>
-<header class="titlebar"><div class="brand-mark small"><img src="assets/icon.svg" alt=""></div><span>BC-250 Adrenaline</span><span class="title-preview">PRÉVIA</span></header>
-<aside class="sidebar">
-  <div class="identity"><div class="brand-mark"><img src="assets/icon.svg" alt="BC-250 Adrenaline"></div><div><strong>BC-250</strong><span>Adrenaline</span></div></div>
-  <div class="side-caption">SUA PLACA, EM DETALHES</div>
-  <nav aria-label="Navegação principal">
-    <button class="nav-item selected" data-page="overview"><i data-icon="home"></i>Visão geral</button>
-    <button class="nav-item" data-page="sensors"><i data-icon="pulse"></i>Sensores</button>
-    <button class="nav-item" data-page="performance"><i data-icon="chart"></i>Desempenho</button>
-    <button class="nav-item" data-page="driver"><i data-icon="download"></i>Driver <span id="driver-dot" class="nav-dot"></span></button>
-    <button class="nav-item" data-page="system"><i data-icon="chip"></i>Sistema</button>
-  </nav>
-  <div class="sidebar-bottom"><div class="community-note"><i data-icon="heart"></i><strong>Feito pela comunidade.</strong><span>Uma placa. Novas possibilidades.</span><button class="link" data-action="donate">Apoiar o desenvolvimento <span>↗</span></button></div>
-  <button class="nav-item" data-page="settings"><i data-icon="settings"></i>Configurações</button>
-  <div class="side-footer"><span class="live-dot"></span>Modo demonstração <span>v0.1</span></div></div>
-</aside>
-<main id="main" tabindex="-1">
-  <div class="demo-banner"><i data-icon="info"></i><span><strong>Modo demonstração</strong> · Instalação e informações da placa são simuladas.</span><button class="link" data-page="settings">Configurar</button></div>
-  <div id="install-view" hidden>
-    <div class="page-heading"><div><p class="eyebrow">VAMOS COMEÇAR</p><h1>Vamos preparar sua BC-250.</h1><p>Instale, acompanhe e conheça melhor sua placa.</p></div></div>
-    <section class="open-source-strip card"><div class="source-symbol" aria-hidden="true">&lt;/&gt;</div><div><h2>Código aberto. Novas possibilidades.</h2><p>Um driver independente para a BC-250, construído por um desenvolvedor e apoiado pela comunidade.</p></div><span class="pill">Open source</span></section>
-    <section class="card installation"><div class="section-heading"><div class="heading-icon"><i data-icon="download"></i></div><div><h2 id="install-title">Prepare sua placa</h2><p id="install-description">O driver ainda não está instalado neste cenário de demonstração.</p></div><span class="pill amber" id="install-state">Instalação pendente</span></div>
-      <div class="install-checks"><div><i data-icon="check"></i><span>Placa compatível<strong>AMD BC-250 · 1002:13FE</strong></span></div><div><i data-icon="check"></i><span>Sistema compatível<strong>Windows 10 / 11 · 64 bits</strong></span></div><div><i data-icon="check"></i><span>Pacote de demonstração<strong>Adrenaline Driver · 0.1-demo</strong></span></div></div>
-      <div id="installation-progress" hidden><div class="progress-caption"><span id="step-label">Preparando…</span><strong id="step-percent">0%</strong></div><progress id="install-progress" max="100" value="0" aria-label="Progresso da instalação simulada"></progress><ol id="install-steps"><li>Preparação</li><li>Pacote</li><li>Instalação</li><li>Verificação</li></ol><p class="quiet" id="install-live" role="status"></p></div>
-      <div class="install-actions"><span><i data-icon="shield"></i>Experiência simulada. Sem alterações no driver atual.</span><button class="primary" id="install-button"><i data-icon="download"></i>Instalar driver · demonstração</button><button id="cancel-install" hidden>Cancelar</button><button class="primary" id="finish-install" hidden>Continuar <span>→</span></button></div>
-    </section>
-    <p class="install-footnote">Desenvolvimento independente <span>·</span> Feito pela comunidade <span>·</span> Sem afiliação à AMD</p>
+<body class="installer-active">
+
+<!-- ============================================================== -->
+<!-- STANDALONE INSTALLER FLOW (Active when !preferences.installed) -->
+<!-- ============================================================== -->
+<div id="installer-app">
+  <header class="installer-titlebar">
+    <div class="installer-titlebar-left">
+      <div class="installer-brand-mark"><img src="assets/icon.svg" alt="AMD"></div>
+      <span class="installer-app-name">AMD Software: Adrenalin Edition</span>
+      <span class="installer-title-divider">/</span>
+      <span class="installer-setup-title">Assistente de Instalação do Driver BC-250</span>
+    </div>
+    <div class="installer-titlebar-right">
+      <button class="installer-util-btn" data-action="donate" title="Apoiar o projeto independente">Apoiar Projeto ☕</button>
+      <button class="installer-util-btn" id="installer-skip-btn" data-action="skip-install" title="Ignorar instalação e abrir painel de demonstração">Pular para Demonstração →</button>
+      <div class="win-controls" aria-hidden="true">
+        <span class="win-btn">—</span>
+        <span class="win-btn">□</span>
+        <span class="win-btn close">✕</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="installer-shell">
+    <!-- Left Column: Branding, Chip Info, Vertical Stepper, Open Source -->
+    <aside class="installer-sidebar">
+      <div class="installer-brand-card">
+        <div class="brand-badge-row">
+          <div class="brand-mark-box"><img src="assets/icon.svg" alt="AMD BC-250"></div>
+          <div>
+            <strong>AMD BC-250</strong>
+            <span>Adrenaline Edition</span>
+          </div>
+        </div>
+        <div class="installer-pkg-info">
+          <span class="pkg-label">PACOTE WDDM 2.7</span>
+          <span class="pkg-version">v3.423.1-community</span>
+        </div>
+      </div>
+
+      <div class="chip-spec-box">
+        <div class="chip-spec-title">
+          <i data-icon="chip"></i>
+          <span>Silício Detectado</span>
+        </div>
+        <strong>AMD BC-250 APU</strong>
+        <p>Cyan Skillfish 2 · GC 10.1.3 · 24 CUs</p>
+        <div class="chip-spec-tags">
+          <span class="spec-tag">16 GB GDDR6</span>
+          <span class="spec-tag">PCI 1002:13FE</span>
+          <span class="spec-tag">UEFI GOP</span>
+        </div>
+      </div>
+
+      <!-- Vertical Stepper (6 Steps) -->
+      <nav class="vertical-stepper" role="tablist" aria-label="Etapas da Instalação">
+        <div class="vstep active" data-vstep="1">
+          <span class="vstep-num">1</span>
+          <div class="vstep-info">
+            <strong data-i18n="step1">Idioma</strong>
+            <small data-i18n="vstep1Desc">Interface e região</small>
+          </div>
+        </div>
+        <div class="vstep" data-vstep="2">
+          <span class="vstep-num">2</span>
+          <div class="vstep-info">
+            <strong data-i18n="step2">Destino &amp; VRAM</strong>
+            <small data-i18n="vstep2Desc">Diretório e memória</small>
+          </div>
+        </div>
+        <div class="vstep" data-vstep="3">
+          <span class="vstep-num">3</span>
+          <div class="vstep-info">
+            <strong data-i18n="step3">Modo Beta</strong>
+            <small data-i18n="vstep3Desc">Assinatura de teste</small>
+          </div>
+        </div>
+        <div class="vstep" data-vstep="4">
+          <span class="vstep-num">4</span>
+          <div class="vstep-info">
+            <strong data-i18n="step4">Administrador</strong>
+            <small data-i18n="vstep4Desc">Elevação UAC</small>
+          </div>
+        </div>
+        <div class="vstep" data-vstep="5">
+          <span class="vstep-num">5</span>
+          <div class="vstep-info">
+            <strong data-i18n="step5">Instalação</strong>
+            <small data-i18n="vstep5Desc">Execução de scripts</small>
+          </div>
+        </div>
+        <div class="vstep" data-vstep="6">
+          <span class="vstep-num">6</span>
+          <div class="vstep-info">
+            <strong data-i18n="step6">Conclusão</strong>
+            <small data-i18n="vstep6Desc">Pós-boot &amp; ativação</small>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Compact Open-Source Strip (height < 110px for test compatibility) -->
+      <section class="open-source-strip card">
+        <div class="source-symbol" aria-hidden="true">&lt;/&gt;</div>
+        <div>
+          <h2>Código aberto. Novas possibilidades.</h2>
+          <p>Driver comunitário independente para a BC-250 construído por um desenvolvedor.</p>
+        </div>
+        <span class="pill">Open source</span>
+      </section>
+    </aside>
+
+    <!-- Right Column: Interactive Installer Pages -->
+    <main class="installer-stage" id="installer-stage">
+      <!-- Step 1: Idioma / Language -->
+      <section class="installer-card" id="step-lang-card">
+        <div class="installer-step-header">
+          <div class="step-header-icon"><i data-icon="settings"></i></div>
+          <div>
+            <span class="step-counter">ETAPA 1 DE 6</span>
+            <h2 id="lang-title" data-i18n="langTitle">Selecione o Idioma do Assistente</h2>
+            <p id="lang-subtitle" data-i18n="langSubtitle">Escolha o idioma preferencial para a interface, instalação e telemetria da sua BC-250.</p>
+          </div>
+        </div>
+
+        <div class="lang-grid" role="radiogroup" aria-labelledby="lang-title">
+          <button class="lang-card selected" data-lang="pt" role="radio" aria-checked="true">
+            <div class="flag-wrapper">
+              <svg viewBox="0 0 72 48" class="flag-icon" aria-hidden="true">
+                <rect width="72" height="48" fill="#009739" rx="4"/>
+                <polygon points="36,6 66,24 36,42 6,24" fill="#FEDD00"/>
+                <circle cx="36" cy="24" r="11" fill="#002776"/>
+                <path d="M 25.5,25.5 A 11,11 0 0,1 46.5,23" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="lang-meta">
+              <strong>Português</strong>
+              <span>Brasil (pt-BR)</span>
+            </div>
+            <span class="lang-badge">Padrão</span>
+          </button>
+          <button class="lang-card" data-lang="en" role="radio" aria-checked="false">
+            <div class="flag-wrapper">
+              <svg viewBox="0 0 72 48" class="flag-icon" aria-hidden="true">
+                <rect width="72" height="48" fill="#FFFFFF" rx="4"/>
+                <path d="M0,0 h72 v3.7 h-72 z M0,7.4 h72 v3.7 h-72 z M0,14.8 h72 v3.7 h-72 z M0,22.2 h72 v3.7 h-72 z M0,29.6 h72 v3.7 h-72 z M0,37 h72 v3.7 h-72 z M0,44.4 h72 v3.6 h-72 z" fill="#B22234"/>
+                <rect width="32" height="26" fill="#3C3B6E" rx="3 0 0 0"/>
+                <circle cx="6" cy="5" r="1.2" fill="#fff"/><circle cx="13" cy="5" r="1.2" fill="#fff"/><circle cx="20" cy="5" r="1.2" fill="#fff"/><circle cx="26" cy="5" r="1.2" fill="#fff"/>
+                <circle cx="9.5" cy="10" r="1.2" fill="#fff"/><circle cx="16.5" cy="10" r="1.2" fill="#fff"/><circle cx="23" cy="10" r="1.2" fill="#fff"/>
+                <circle cx="6" cy="15" r="1.2" fill="#fff"/><circle cx="13" cy="15" r="1.2" fill="#fff"/><circle cx="20" cy="15" r="1.2" fill="#fff"/><circle cx="26" cy="15" r="1.2" fill="#fff"/>
+                <circle cx="9.5" cy="20" r="1.2" fill="#fff"/><circle cx="16.5" cy="20" r="1.2" fill="#fff"/><circle cx="23" cy="20" r="1.2" fill="#fff"/>
+              </svg>
+            </div>
+            <div class="lang-meta">
+              <strong>English</strong>
+              <span>United States / Global</span>
+            </div>
+            <span class="lang-badge">Global</span>
+          </button>
+          <button class="lang-card" data-lang="es" role="radio" aria-checked="false">
+            <div class="flag-wrapper">
+              <svg viewBox="0 0 72 48" class="flag-icon" aria-hidden="true">
+                <rect width="72" height="48" fill="#AA151B" rx="4"/>
+                <rect y="12" width="72" height="24" fill="#F1BF00"/>
+                <rect x="14" y="18" width="8" height="11" rx="2" fill="#AA151B"/>
+                <circle cx="18" cy="17" r="2" fill="#F1BF00"/>
+                <rect x="16" y="20" width="4" height="7" fill="#F1BF00"/>
+              </svg>
+            </div>
+            <div class="lang-meta">
+              <strong>Español</strong>
+              <span>España / Latinoamérica</span>
+            </div>
+            <span class="lang-badge">Oficial</span>
+          </button>
+          <button class="lang-card" data-lang="ru" role="radio" aria-checked="false">
+            <div class="flag-wrapper">
+              <svg viewBox="0 0 72 48" class="flag-icon" aria-hidden="true">
+                <rect width="72" height="48" fill="#FFFFFF" rx="4"/>
+                <rect y="16" width="72" height="16" fill="#0039A6"/>
+                <rect y="32" width="72" height="16" fill="#D52B1E" rx="0 0 4 4"/>
+              </svg>
+            </div>
+            <div class="lang-meta">
+              <strong>Русский</strong>
+              <span>Россия / СНГ</span>
+            </div>
+            <span class="lang-badge">Локализация</span>
+          </button>
+        </div>
+
+        <div class="installer-action-bar">
+          <div class="action-bar-meta">
+            <i data-icon="shield"></i>
+            <span>Ambiente autônomo NamixWDDM · Pronto para instalação</span>
+          </div>
+          <button class="primary" id="install-button">
+            <span data-i18n="btnContinue">Continuar</span> <span>→</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 2: Destino de Instalação & VRAM Allocation -->
+      <section class="installer-card" id="step-vram-card" hidden>
+        <div class="installer-step-header">
+          <div class="step-header-icon"><i data-icon="download"></i></div>
+          <div>
+            <span class="step-counter">ETAPA 2 DE 6</span>
+            <h2 id="vram-title" data-i18n="vramTitle">Destino da Instalação e Memória de Vídeo (VRAM)</h2>
+            <p id="vram-subtitle" data-i18n="vramSubtitle">Defina o diretório dos componentes do driver e os limites de memória da APU AMD BC-250.</p>
+          </div>
+        </div>
+
+        <!-- Directory Picker Card -->
+        <div class="install-path-box card">
+          <div class="path-box-header">
+            <div>
+              <strong data-i18n="installPathTitle">Pasta de Destino da Instalação</strong>
+              <p data-i18n="installPathSubtitle">Os binários do driver KMD/UMD, arquivos INF e serviços WDDM serão gravados neste local.</p>
+            </div>
+          </div>
+          <div class="path-input-row">
+            <div class="path-input-wrapper">
+              <i data-icon="chip" class="path-field-icon"></i>
+              <input type="text" id="install-path-input" value="C:\Program Files\AMD\BC-250 Adrenaline" spellcheck="false" aria-label="Caminho de instalação">
+            </div>
+            <button type="button" id="btn-browse-path" class="subtle-btn">
+              <i data-icon="search"></i>
+              <span data-i18n="btnBrowse">Procurar…</span>
+            </button>
+          </div>
+          <div class="disk-space-meter">
+            <div class="disk-meter-info">
+              <span><strong data-i18n="spaceRequiredLabel">Espaço necessário:</strong> 450 MB</span>
+              <span class="disk-avail"><strong data-i18n="spaceAvailableLabel">Espaço livre em C:\:</strong> 142,6 GB</span>
+            </div>
+            <div class="disk-bar-track">
+              <div class="disk-bar-fill" style="width: 3%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unified Memory Visualizer -->
+        <div class="memory-visualizer card">
+          <div class="mem-viz-header">
+            <span>Memória GDDR6 Unificada (16 GB Totais)</span>
+            <span id="mem-viz-summary">VRAM: 512 MB · RAM Livre: 15.5 GB</span>
+          </div>
+          <div class="mem-bar-track">
+            <div class="mem-bar-vram" id="mem-bar-vram" style="width: 3.125%;"></div>
+            <div class="mem-bar-ram" id="mem-bar-ram" style="width: 96.875%;"></div>
+          </div>
+          <div class="mem-viz-legend">
+            <div><span class="legend-dot vram-dot"></span><span data-i18n="vramBarVram">VRAM Dedicada Fixa</span>: <strong id="vram-val-legend">512 MB</strong></div>
+            <div><span class="legend-dot ram-dot"></span><span data-i18n="vramBarRam">RAM Livre p/ Sistema</span>: <strong id="ram-val-legend">15.5 GB</strong></div>
+          </div>
+        </div>
+
+        <!-- VRAM Options Grid -->
+        <div class="vram-grid" role="radiogroup" aria-labelledby="vram-title">
+          <button class="vram-card" data-vram="256" role="radio" aria-checked="false">
+            <div class="vram-card-top">
+              <strong>256 MB</strong>
+              <span class="vram-tag">Leve</span>
+            </div>
+            <p data-i18n="vramOpt256Desc">Leve · Foco em máxima memória RAM para a CPU</p>
+          </button>
+          <button class="vram-card selected" data-vram="512" role="radio" aria-checked="true">
+            <div class="vram-card-top">
+              <strong>512 MB</strong>
+              <span class="vram-tag recommended" data-i18n="vramRecommended">Recomendado</span>
+            </div>
+            <p data-i18n="vramOpt512Desc">Equilíbrio ideal recomendado · Testado e validado</p>
+          </button>
+          <button class="vram-card" data-vram="2048" role="radio" aria-checked="false">
+            <div class="vram-card-top">
+              <strong>2 GB</strong>
+              <span class="vram-tag">2.048 MB</span>
+            </div>
+            <p data-i18n="vramOpt2gDesc">Jogos casuais · Texturas médias e estabilidade</p>
+          </button>
+          <button class="vram-card" data-vram="4096" role="radio" aria-checked="false">
+            <div class="vram-card-top">
+              <strong>4 GB</strong>
+              <span class="vram-tag">4.096 MB</span>
+            </div>
+            <p data-i18n="vramOpt4gDesc">Jogos pesados · Texturas altas e resoluções maiores</p>
+          </button>
+          <button class="vram-card" data-vram="8192" role="radio" aria-checked="false">
+            <div class="vram-card-top">
+              <strong>8 GB</strong>
+              <span class="vram-tag">8.192 MB</span>
+            </div>
+            <p data-i18n="vramOpt8gDesc">Cargas intensas · 50% de VRAM dedicada (8 GB RAM restantes)</p>
+          </button>
+        </div>
+
+        <!-- Mandatory Technical Warning Notice -->
+        <div class="vram-notice card">
+          <div class="notice-icon"><i data-icon="info"></i></div>
+          <div class="notice-text">
+            <strong data-i18n="noticeHeader">Aviso Técnico de Alocação de Memória</strong>
+            <p id="vram-warning-text" data-i18n="vramWarning">Independente do valor selecionado, o Windows poderá alocar mais memória de vídeo compartilhada para o seu jogo dinamicamente conforme a demanda gráfica. Sua escolha define apenas o valor mínimo reservado, que será subtraído da memória RAM do sistema. O valor recomendado é 512 MB.</p>
+          </div>
+        </div>
+
+        <div class="installer-action-bar">
+          <button class="subtle-btn" id="btn-step2-back">
+            <span>←</span> <span data-i18n="btnBack">Voltar</span>
+          </button>
+          <button class="primary" id="btn-step2-next">
+            <span data-i18n="btnContinue">Continuar</span> <span>→</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 3: Beta Driver & Testsigning Mode -->
+      <section class="installer-card" id="step-beta-card" hidden>
+        <div class="installer-step-header">
+          <div class="step-header-icon"><i data-icon="shield"></i></div>
+          <div>
+            <span class="step-counter">ETAPA 3 DE 6</span>
+            <h2 id="beta-title" data-i18n="betaTitle">Assinatura Digital e Modo de Teste do Windows</h2>
+            <p id="beta-subtitle" data-i18n="betaSubtitle">Autorização para execução do driver em ambiente WDDM de desenvolvimento independente.</p>
+          </div>
+        </div>
+
+        <div class="beta-content card">
+          <h3 data-i18n="betaCardTitle">Driver Comunitário e Modo Testsigning</h3>
+          <p data-i18n="betaParagraph1">Por ser um projeto independente desenvolvido pela comunidade, este driver não possui o selo de certificação digital WHQL da Microsoft.</p>
+          <p data-i18n="betaParagraph2">Para permitir que o subsistema gráfico do Windows 10/11 carregue o driver em modo kernel (KMD), é necessário colocar o Windows em um modo que aceite instalar e executar drivers beta (Modo de Teste / Testsigning).</p>
+          <ul class="beta-checklist">
+            <li><i data-icon="check"></i> <span data-i18n="betaItem1">Procedimento oficial suportado pela Microsoft para testes de engenharia de hardware.</span></li>
+            <li><i data-icon="check"></i> <span data-i18n="betaItem2">Não compromete permanentemente a segurança nem altera arquivos de sistema.</span></li>
+            <li><i data-icon="check"></i> <span data-i18n="betaItem3">Pode ser revertido a qualquer momento pelas configurações de boot do Windows.</span></li>
+          </ul>
+        </div>
+
+        <label class="consent-checkbox-card">
+          <input type="checkbox" id="beta-consent-check" checked>
+          <span class="checkbox-custom"></span>
+          <span class="consent-text" data-i18n="betaConsent">Compreendo que este é um driver comunitário em estágio beta e autorizo a ativação do Modo de Teste no Windows.</span>
+        </label>
+
+        <div class="installer-action-bar">
+          <button class="subtle-btn" id="btn-step3-back">
+            <span>←</span> <span data-i18n="btnBack">Voltar</span>
+          </button>
+          <div class="action-btn-group">
+            <button class="subtle-btn" id="btn-step3-next">
+              <span data-i18n="btnContinue">Avançar para UAC</span> <span>→</span>
+            </button>
+            <button class="primary" id="btn-start-install">
+              <i data-icon="bolt"></i>
+              <span data-i18n="btnStartConfig">Confirmar e Iniciar Instalação</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 4: Administrator Privileges (UAC Elevation) -->
+      <section class="installer-card" id="step-uac-card" hidden>
+        <div class="installer-step-header">
+          <div class="step-header-icon uac-header-icon">
+            <svg class="uac-shield-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" fill="#0078d4"/>
+              <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91V2z" fill="#005a9e"/>
+              <path d="M12 4.1L6 6.4v4.69c0 3.84 2.56 7.42 6 8.35V4.1z" fill="#ffb900"/>
+              <path d="M12 4.1l6 2.3v4.69c0 3.84-2.56 7.42-6 8.35V4.1z" fill="#f7630c"/>
+            </svg>
+          </div>
+          <div>
+            <span class="step-counter">ETAPA 4 DE 6</span>
+            <h2 id="uac-title" data-i18n="uacTitle">Privilégios de Administrador Necessários</h2>
+            <p id="uac-subtitle" data-i18n="uacSubtitle">A configuração de baixo nível do subsistema gráfico exige autorização administrativa do Windows.</p>
+          </div>
+        </div>
+
+        <div class="uac-prompt-box card">
+          <div class="uac-box-header">
+            <div class="uac-shield-large">
+              <svg viewBox="0 0 24 24" class="uac-shield-svg" aria-hidden="true">
+                <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" fill="#0078d4"/>
+                <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91V2z" fill="#005a9e"/>
+                <path d="M12 4.1L6 6.4v4.69c0 3.84 2.56 7.42 6 8.35V4.1z" fill="#ffb900"/>
+                <path d="M12 4.1l6 2.3v4.69c0 3.84-2.56 7.42-6 8.35V4.1z" fill="#f7630c"/>
+              </svg>
+            </div>
+            <div class="uac-box-title">
+              <h3 data-i18n="uacCardTitle">Controle de Conta de Usuário (UAC)</h3>
+              <p>O assistente precisa de privilégios de Administrador para executar as seguintes rotinas de sistema:</p>
+            </div>
+            <span class="pill amber" id="uac-status-badge">
+              <span class="live-dot" style="background:#f6c670"></span>
+              <span data-i18n="uacWaiting">Aguardando autorização de Administrador</span>
+            </span>
+          </div>
+
+          <div class="uac-routine-list">
+            <div class="uac-routine-item">
+              <div class="uac-dot-num">1</div>
+              <div>
+                <strong>Modificação do Bootloader BCD</strong>
+                <p data-i18n="uacDesc1">Execução de <code>bcdedit.exe /set testsigning on</code> no repositório BCD do sistema operacional.</p>
+              </div>
+            </div>
+            <div class="uac-routine-item">
+              <div class="uac-dot-num">2</div>
+              <div>
+                <strong>Gravação de Chaves no Registro (HKLM)</strong>
+                <p data-i18n="uacDesc2">Gravação dos parâmetros de alocação de memória no Registro do Sistema (HKLM\SYSTEM\CurrentControlSet).</p>
+              </div>
+            </div>
+            <div class="uac-routine-item">
+              <div class="uac-dot-num">3</div>
+              <div>
+                <strong>Agendador de Tarefas do Windows</strong>
+                <p data-i18n="uacDesc3">Criação de tarefa no Agendador do Windows com os privilégios mais altos (Highest) para inicialização pós-boot.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="uac-action-panel">
+            <button class="primary uac-grant-btn" id="btn-request-admin">
+              <svg viewBox="0 0 24 24" class="btn-uac-shield" aria-hidden="true">
+                <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" fill="#0078d4"/>
+                <path d="M12 4.1L6 6.4v4.69c0 3.84 2.56 7.42 6 8.35V4.1z" fill="#ffb900"/>
+              </svg>
+              <span data-i18n="btnRequestAdmin">Conceder Acesso de Administrador (Solicitar UAC)</span>
+            </button>
+            <span class="uac-verified-note" id="uac-verified-note" hidden>
+              <i data-icon="check"></i> Privilégios administrativos confirmados no Windows.
+            </span>
+          </div>
+        </div>
+
+        <div class="installer-action-bar">
+          <button class="subtle-btn" id="btn-step4-back">
+            <span>←</span> <span data-i18n="btnBack">Voltar</span>
+          </button>
+          <button class="primary" id="btn-start-install-step4">
+            <i data-icon="bolt"></i>
+            <span data-i18n="btnStartConfig">Iniciar Configuração do Sistema</span> <span>→</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 5: Loading & Script Execution -->
+      <section class="installer-card" id="step-loading-card" hidden>
+        <div class="installer-step-header">
+          <div class="step-header-icon spin-icon"><i data-icon="refresh"></i></div>
+          <div>
+            <span class="step-counter">ETAPA 5 DE 6</span>
+            <h2 id="loading-title" data-i18n="loadingTitle">Preparando o Ambiente do Sistema</h2>
+            <p id="loading-subtitle" data-i18n="loadingSubtitle">Executando procedimentos de configuração de boot, registro e tarefas agendadas...</p>
+          </div>
+        </div>
+
+        <div class="loading-body">
+          <div class="progress-caption">
+            <span id="script-step-label" data-i18n="step1Label">1. Liberando instalação de drivers beta (Testsigning)</span>
+            <strong id="script-step-percent">0%</strong>
+          </div>
+          <progress id="install-progress" max="100" value="0" aria-label="Progresso da configuração do sistema"></progress>
+          
+          <div class="script-badges">
+            <div class="script-badge active" id="badge-script-1">
+              <span class="badge-icon">1</span>
+              <span class="badge-text" data-i18n="step1Label">Testsigning no BCDEDIT</span>
+            </div>
+            <div class="script-badge" id="badge-script-2">
+              <span class="badge-icon">2</span>
+              <span class="badge-text" data-i18n="step2Label">Alocação VRAM no Registro</span>
+            </div>
+            <div class="script-badge" id="badge-script-3">
+              <span class="badge-icon">3</span>
+              <span class="badge-text" data-i18n="step3Label">Tarefa pós-boot agendada</span>
+            </div>
+          </div>
+
+          <div class="terminal-container">
+            <div class="terminal-bar">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">Windows PowerShell — Execução de Políticas de Driver</span>
+            </div>
+            <pre class="terminal-content" id="terminal-log"></pre>
+          </div>
+        </div>
+
+        <div class="installer-action-bar">
+          <button class="subtle-btn" id="cancel-install">
+            <span data-i18n="btnCancel">Cancelar</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 6: Success & Integrated Donate -->
+      <section class="installer-card" id="step-success-card" hidden>
+        <div class="success-hero">
+          <div class="success-icon"><i data-icon="check"></i></div>
+          <h2 id="success-title" data-i18n="successTitle">Configuração do Sistema Concluída!</h2>
+          <p id="success-subtitle" data-i18n="successSubtitle">O Windows foi preparado para carregar o driver após a próxima reinicialização.</p>
+          <span class="pill green" id="install-state"><span class="live-dot"></span>Modo Testsigning &amp; VRAM configurados</span>
+        </div>
+
+        <div class="post-boot-card card">
+          <div class="post-boot-icon"><i data-icon="chip"></i></div>
+          <div class="post-boot-content">
+            <h3 data-i18n="postBootNoticeTitle">Próxima Etapa: Vincular driver ao Hardware</h3>
+            <p data-i18n="postBootNoticeText">A tarefa agendada foi registrada. Quando o computador ligar novamente, o aplicativo abrirá na tela "Vincular driver ao Hardware" para finalizar a ativação da BC-250.</p>
+          </div>
+        </div>
+
+        <div class="success-actions-row">
+          <button class="primary" id="btn-simulate-link">
+            <i data-icon="bolt"></i>
+            <span data-i18n="btnSimulateLink">Vincular driver ao Hardware Agora (Simular Pós-Boot) ↗</span>
+          </button>
+          <button id="finish-install" class="subtle-btn skip-donation">
+            <span data-i18n="btnFinishDashboard">Concluir e Ir para a Visão Geral →</span>
+          </button>
+        </div>
+
+        <!-- Integrated Donate Card -->
+        <div class="integrated-donate card">
+          <div class="donation-header">
+            <div class="coffee-icon"><i data-icon="coffee"></i></div>
+            <div class="donation-header-text">
+              <span class="eyebrow" data-i18n="donateSupportEyebrow">APOIO REAL · PROJETO INDEPENDENTE</span>
+              <h2 data-i18n="donateTitle">Apoie o Desenvolvimento Independente</h2>
+              <p data-i18n="donateSubtitle">A AMD possui equipes inteiras para desenvolvimento de drivers. Este driver é feito por um único desenvolvedor com apoio da comunidade.</p>
+            </div>
+            <span class="pill real-support">Apoio voluntário</span>
+          </div>
+          <div class="payment-tabs" role="tablist" aria-label="Forma de contribuição">
+            <button role="tab" aria-selected="true" data-onboarding-method="card">▤ Cartão</button>
+            <button role="tab" aria-selected="false" data-onboarding-method="crypto">◈ Cripto</button>
+            <button role="tab" aria-selected="false" data-onboarding-method="pix">◇ Pix</button>
+          </div>
+          <div id="payment-panel-onboarding" class="payment-panel"></div>
+        </div>
+      </section>
+
+      <!-- Subview: Vincular Driver ao Hardware -->
+      <section class="installer-card" id="hardware-link-view" hidden>
+        <div class="installer-step-header">
+          <div class="step-header-icon"><i data-icon="chip"></i></div>
+          <div>
+            <span class="step-counter">ATIVAÇÃO DE HARDWARE</span>
+            <h2 id="link-view-title" data-i18n="linkViewTitle">Vincular driver ao Hardware</h2>
+            <p id="link-view-subtitle" data-i18n="linkViewSubtitle">Finalize a vinculação do driver WDDM ao silício AMD BC-250 detectado.</p>
+          </div>
+        </div>
+
+        <div class="hardware-detect-box card">
+          <div class="device-strip" style="margin-bottom:0">
+            <div class="device-icon"><i data-icon="chip"></i></div>
+            <div>
+              <h2 id="link-card-title">AMD BC-250 APU <span class="pill">Cyan Skillfish</span></h2>
+              <p id="link-card-specs">24 Compute Units · 16 GB GDDR6 · PCI 1002:13FE · UEFI GOP DisplayPort Ativo</p>
+            </div>
+            <div class="device-state">
+              <span class="pill green" id="link-status-pill">Hardware Pronto</span>
+              <span id="link-vram-tag">VRAM Mínima: 512 MB</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="binding-progress-box card" id="binding-progress-box" hidden>
+          <div class="progress-caption">
+            <span id="binding-step-label">Registrando serviço de driver do dispositivo...</span>
+            <strong id="binding-percent">0%</strong>
+          </div>
+          <progress id="binding-progress-bar" max="100" value="0"></progress>
+        </div>
+
+        <div class="installer-action-bar">
+          <button class="subtle-btn" id="btn-back-from-link">
+            <span>←</span> <span data-i18n="btnBack">Voltar</span>
+          </button>
+          <button class="primary" id="btn-bind-hardware">
+            <i data-icon="check"></i>
+            <span data-i18n="btnBindHardware">Vincular e Ativar Driver WDDM</span>
+          </button>
+        </div>
+      </section>
+    </main>
   </div>
-  <div id="dashboard-view" hidden>
-    <div class="page-heading"><div><p class="eyebrow">BC-250 ADRENALINE</p><h1 id="page-title">Visão geral</h1><p id="page-subtitle">Um olhar completo sobre a sua placa.</p></div><div class="page-tools"><span id="sample-status" class="sample-status"><span class="live-dot"></span>Simulação ao vivo</span><button id="pause-button" title="Pausar telemetria simulada"><i data-icon="pause"></i><span>Pausar</span></button></div></div>
-    <section data-view="overview">
-      <div class="device-strip card"><div class="device-icon"><i data-icon="chip"></i></div><div><h2>AMD BC-250 <span class="pill">Cyan Skillfish</span></h2><p>24 Compute Units <span>·</span> 16 GB GDDR6 <span>·</span> PCI 1002:13FE</p></div><div class="device-state"><span class="pill green"><span class="live-dot"></span>Driver instalado · demo</span><span>Adrenaline 0.1-demo</span></div></div>
-      <div class="metric-grid" id="overview-metrics"></div>
-      <section class="card board-panel"><div class="section-heading"><div><h2>Mapa térmico da placa</h2><p>Selecione a APU ou uma memória para ver os detalhes.</p></div><span class="pill">Vista ilustrativa</span></div><div class="board-layout"><div class="board-stage"><div id="thermal-board"></div><div class="board-caption"><span>AMD BC-250</span><span>APU + 8 módulos GDDR6</span></div></div><aside class="component-detail"><span class="eyebrow">COMPONENTE SELECIONADO</span><h3 id="component-name">APU · CPU / GPU</h3><div class="component-reading"><span id="component-temp">—</span><small>°C</small></div><span class="pill" id="component-band">Aguardando</span><dl><div><dt>Sensor</dt><dd id="component-source">Maior entre CPU e GPU</dd></div><div><dt>Origem</dt><dd>Simulada</dd></div><div><dt>Atualização</dt><dd id="sample-interval">1 segundo</dd></div></dl><p class="quiet">As posições das memórias são ilustrativas e não correspondem a canais físicos validados.</p></aside></div><div class="thermal-footer"><div class="scale-label">Escala visual <span class="heat-scale"></span><span>20 °C</span><span>70 °C</span><span>120 °C</span></div><span>As cores não representam limites de segurança.</span></div><div class="memory-grid" id="memory-grid"></div></section>
-      <div class="two-columns"><section class="card chart-panel"><div class="section-heading"><div><h2>Temperatura ao longo do tempo</h2><p>Histórico da sessão · CPU e GPU</p></div><span class="chart-legend"><b class="cpu-key">CPU</b><b class="gpu-key">GPU</b></span></div><div id="temp-chart" class="chart"></div></section><section class="card cooling-panel"><div class="section-heading"><div><h2>Refrigeração e memória</h2><p>Uma visão rápida dos sensores</p></div><i data-icon="fan"></i></div><div class="summary-rows" id="cooling-summary"></div></section></div>
-    </section>
-    <section data-view="sensors" hidden><div class="section-toolbar"><label class="search"><i data-icon="search"></i><input id="sensor-search" placeholder="Buscar sensor…" aria-label="Buscar sensor"></label><button data-action="export"><i data-icon="download"></i>Exportar amostra</button></div><section class="card sensor-table"><table><thead><tr><th>Sensor</th><th>Atual</th><th>Mínimo da sessão</th><th>Máximo da sessão</th><th>Origem</th></tr></thead><tbody id="sensor-rows"></tbody></table><p id="no-sensors" hidden>Nenhum sensor encontrado.</p></section></section>
-    <section data-view="performance" hidden><div class="info-note"><i data-icon="info"></i>Os perfis abaixo alteram apenas os dados da demonstração.</div><div id="scenario-cards" class="scenario-grid"></div><div class="two-columns"><section class="card chart-panel"><div class="section-heading"><div><h2>Uso da CPU</h2><p id="cpu-topology-info">6 núcleos · 12 threads · topologia</p></div><strong id="cpu-load">—</strong></div><div class="chart" id="cpu-chart"></div></section><section class="card chart-panel"><div class="section-heading"><div><h2>Uso da GPU</h2><p>24 Compute Units · topologia</p></div><strong id="gpu-load">—</strong></div><div class="chart" id="gpu-chart"></div></section></div><section class="card"><div class="section-heading"><div><h2>Perfil de frequências</h2><p>Valores de operação da placa</p></div><span class="pill" id="freq-profile-pill">Perfil Ativo</span></div><div class="spec-grid"><div><span>CPU · frequência alvo</span><strong id="perf-cpu-target">3.500 MHz</strong></div><div><span>GPU · faixa de frequência</span><strong>400 – 2.000 MHz</strong></div><div><span>CPU · limite térmico</span><strong>80 °C (Seguro)</strong></div><div><span>Overclock</span><strong id="perf-oc-status">Ativo (SMU Q3 0x8F)</strong></div></div></section><section class="card cpu-oc-card"><div class="section-heading"><div class="heading-icon"><i data-icon="bolt"></i></div><div><h2>Ajuste de Frequência da CPU (Overclock Zen 2)</h2><p>Configuração direta via SMU Q3 0x8F (faixa de 3.0 GHz a 4.2 GHz)</p></div><span class="pill green" id="cpu-oc-badge">3.500 MHz ativo</span></div><div class="oc-panel-body"><div class="oc-slider-row"><div class="oc-label-val"><span>Frequência Alvo de Boost:</span><strong id="cpu-slider-display">3.500 MHz (3.5 GHz)</strong></div><input type="range" id="cpu-freq-slider" min="3000" max="4200" step="100" value="3500" aria-label="Frequência máxima de boost da CPU em MHz"><div class="oc-ticks"><span>3.0 GHz (Min)</span><span>3.5 GHz (Base)</span><span>4.0 GHz (Estável)</span><span>4.2 GHz (Max)</span></div></div><div class="button-row oc-btn-row"><button class="primary" id="btn-apply-cpu-oc"><i data-icon="bolt"></i>Aplicar Frequência</button><button id="btn-reset-cpu-oc">Restaurar Padrão (3.5 GHz)</button></div><p class="quiet" id="cpu-oc-feedback" role="status">Comando SMU testado e comprovado no silício (persistente após reboot).</p><div id="cpu-oc-response-box" class="oc-response-box" hidden><div class="oc-res-header"><strong>Resposta da CPU / Silício:</strong><span id="cpu-res-badge" class="pill blue">Aguardando</span></div><div class="oc-res-details"><div><span>Comando SMU:</span><code id="cpu-res-cmd">Queue 3 · Msg 0x8F (SET_MAX_CPU_BOOST_CLK)</code></div><div><span>Retorno do Hardware:</span><strong id="cpu-res-status">—</strong></div><div><span>Diagnóstico do Sistema:</span><p id="cpu-res-diagnostic">—</p></div><div id="cpu-res-raw-container" hidden><span>Saída Bruta:</span><pre id="cpu-res-raw"></pre></div></div></div></div></section></section>
-    <section data-view="driver" hidden><section class="card driver-card"><div class="success-icon"><i data-icon="check"></i></div><h2>Você concluiu a instalação simulada.</h2><p>Seu ambiente de demonstração está pronto para explorar.</p><span class="pill green">Driver instalado no cenário de demonstração</span><div class="spec-grid"><div><span>Versão simulada</span><strong>0.1-demo</strong></div><div><span>Plataforma alvo</span><strong>Windows x64</strong></div><div><span>Adaptador</span><strong>AMD BC-250</strong></div><div><span>Instalação</span><strong id="installed-at">—</strong></div></div><div class="button-row"><button data-action="check-update"><i data-icon="refresh"></i>Verificar atualizações · demo</button><button data-action="reset">Repetir instalação simulada</button></div><p class="quiet" id="update-result" role="status">Esta prévia não consulta nem altera os drivers do Windows.</p></section></section>
-    <section data-view="system" hidden><div class="two-columns"><section class="card"><div class="section-heading"><div class="heading-icon"><i data-icon="chip"></i></div><h2>Placa e arquitetura</h2></div><dl class="system-list"><div><dt>Adaptador</dt><dd>AMD BC-250</dd></div><div><dt>Codinome</dt><dd>Cyan Skillfish / Oberon</dd></div><div><dt>PCI ID</dt><dd>1002:13FE</dd></div><div><dt>Arquitetura gráfica</dt><dd>GC 10.1.3 · gfx1013</dd></div><div><dt>Compute Units</dt><dd>24 · topologia</dd></div><div><dt>CPU</dt><dd id="system-cpu-spec">6 núcleos / 12 threads · AMD BC-250</dd></div><div><dt>Memória compartilhada</dt><dd>16 GB GDDR6 · 8 chips</dd></div></dl></section><section class="card"><div class="section-heading"><div class="heading-icon"><i data-icon="monitor"></i></div><h2>Monitor e armazenamento</h2></div><dl class="system-list"><div><dt>Monitor</dt><dd id="system-monitor">—</dd></div><div><dt>Resolução</dt><dd>2560 × 1080 · simulado</dd></div><div><dt>Taxa de atualização</dt><dd>60 Hz · simulado</dd></div><div><dt>Conexão</dt><dd>DisplayPort</dd></div><div><dt>NVMe</dt><dd id="system-nvme">—</dd></div><div><dt>Temperatura NVMe</dt><dd data-reading="nvme_temp_c">—</dd></div><div><dt>Fonte dos dados</dt><dd>Demonstração local</dd></div></dl></section></div><div class="info-note"><i data-icon="info"></i>Identificadores da BC-250 vêm da referência. Dispositivos conectados, topologia ativa e medições são fictícios nesta versão.</div></section>
-    <section data-view="settings" hidden><h2 class="group-title">Personalização</h2><div class="settings-stack"><label class="setting-row card"><i data-icon="sun"></i><span><strong>Aparência</strong><small>Escolha como o Adrenaline aparece para você.</small></span><select id="theme-select"><option value="system">Usar tema do Windows</option><option value="light">Claro</option><option value="dark">Escuro</option></select></label><label class="setting-row card"><i data-icon="refresh"></i><span><strong>Intervalo de atualização</strong><small>Frequência das amostras simuladas.</small></span><select id="interval-select"><option value="700">700 milissegundos</option><option value="1000">1 segundo</option><option value="2000">2 segundos</option></select></label></div><h2 class="group-title">Demonstração</h2><div class="settings-stack"><label class="setting-row card"><i data-icon="chart"></i><span><strong>Cenário de telemetria</strong><small>Explore o comportamento das temperaturas e sensores.</small></span><select id="scenario-select"><option value="balanced">Uso cotidiano</option><option value="idle">Em repouso</option><option value="gaming">Em jogo</option><option value="hot">Carga elevada</option><option value="unavailable">Sensores indisponíveis</option></select></label><div class="setting-row card"><i data-icon="download"></i><span><strong>Fluxo de instalação</strong><small>Volte ao primeiro acesso ou abra a dashboard diretamente.</small></span><button data-action="reset">Repetir instalação</button></div><label class="setting-row card"><i data-icon="monitor"></i><span><strong>Nome do monitor</strong><small>Também aparece no SVG da placa.</small></span><input id="monitor-input" maxlength="36" aria-label="Nome do monitor"></label><label class="setting-row card"><i data-icon="disk"></i><span><strong>Modelo e capacidade do NVMe</strong><small>Também aparece no SVG da placa.</small></span><input id="nvme-input" maxlength="40" aria-label="Modelo e capacidade do NVMe"></label><div class="setting-row card"><i data-icon="heart"></i><span><strong>Apoiar o projeto</strong><small>Pix, Bitcoin, Solana e cartão pelo Buy Me a Coffee.</small></span><button data-action="donate">Pagar um café</button></div></div><p class="about-text">BC-250 Adrenaline · 0.1.0 · Projeto independente, sem afiliação à AMD.<br>Interface inspirada no Windows 11. Telemetria de referência: BC250-Telemetry.</p></section>
-    <section data-view="donate" id="donation-view" hidden><section class="card donation-card" id="donation-card"><div class="donation-header"><div class="coffee-icon"><i data-icon="coffee"></i></div><div class="donation-header-text"><span class="eyebrow">FEITO POR UMA PESSOA · APOIADO POR MUITAS</span><h2 id="donation-title">Um café faz a diferença.</h2><p>A AMD tem um time inteiro dedicado ao desenvolvimento de drivers. O driver que você está acompanhando é feito por <strong>apenas um desenvolvedor</strong>.</p><p>Se este projeto deu uma nova vida à sua BC-250, que tal pagar uma xícara de café e ajudar o próximo passo?</p></div><span class="pill real-support">Apoio real · opcional</span></div><div class="payment-tabs" role="tablist" aria-label="Forma de contribuição"><button role="tab" aria-selected="true" aria-controls="payment-panel" data-method="card">▤ Cartão</button><button role="tab" aria-selected="false" aria-controls="payment-panel" tabindex="-1" data-method="crypto">◈ Cripto</button><button role="tab" aria-selected="false" aria-controls="payment-panel" tabindex="-1" data-method="pix">◇ Pix</button></div><div id="payment-panel" class="payment-panel" role="tabpanel"></div><p id="payment-status" role="status" aria-live="polite"></p><p class="payment-disclaimer">Os dados de apoio são reais. A instalação e a telemetria continuam simuladas. O app não confirma pagamentos.</p><div class="button-row donation-actions"><button class="primary" id="btn-finish-donation" data-action="close-donation">Continuar para a Visão geral <span>→</span></button><button class="link skip-donation" data-action="close-donation">Continuar sem contribuir →</button></div></section></section>
-    <footer class="main-footer"><span>BC-250 Adrenaline <span>·</span> Feito para dar uma nova vida à sua placa.</span><span id="last-update">Aguardando amostra</span></footer>
-  </div>
-  <div id="locked-view" hidden><div class="page-heading"><div><h1 id="locked-title">Sensores</h1><p>Conclua a instalação de demonstração para explorar esta área.</p></div></div><section class="card empty-state"><i data-icon="shield"></i><h2>Vamos preparar sua BC-250?</h2><p>A dashboard fica disponível após o fluxo de instalação simulado.</p><button class="primary" data-action="go-install">Ir para instalação</button><button class="link" data-action="skip-install">Simular driver já instalado</button></section></div>
-</main>
+</div>
+
+<!-- ========================================================== -->
+<!-- MAIN ADRENALINE DASHBOARD (Active when preferences.installed) -->
+<!-- ========================================================== -->
+<div id="dashboard-app" hidden>
+  <header class="titlebar"><div class="brand-mark small"><img src="assets/icon.svg" alt=""></div><span>BC-250 Adrenaline</span><span class="title-preview">PRÉVIA</span></header>
+  <aside class="sidebar">
+    <div class="identity"><div class="brand-mark"><img src="assets/icon.svg" alt="BC-250 Adrenaline"></div><div><strong>BC-250</strong><span>Adrenaline</span></div></div>
+    <div class="side-caption">SUA PLACA, EM DETALHES</div>
+    <nav aria-label="Navegação principal">
+      <button class="nav-item selected" data-page="overview"><i data-icon="home"></i>Visão geral</button>
+      <button class="nav-item" data-page="sensors"><i data-icon="pulse"></i>Sensores</button>
+      <button class="nav-item" data-page="performance"><i data-icon="chart"></i>Desempenho</button>
+      <button class="nav-item" data-page="driver"><i data-icon="download"></i>Driver <span id="driver-dot" class="nav-dot"></span></button>
+      <button class="nav-item" data-page="system"><i data-icon="chip"></i>Sistema</button>
+    </nav>
+    <div class="sidebar-bottom"><div class="community-note"><i data-icon="heart"></i><strong>Feito pela comunidade.</strong><span>Uma placa. Novas possibilidades.</span><button class="link" data-action="donate">Apoiar o desenvolvimento <span>↗</span></button></div>
+    <button class="nav-item" data-page="settings"><i data-icon="settings"></i>Configurações</button>
+    <div class="side-footer"><span class="live-dot"></span>Modo demonstração <span>v0.1</span></div></div>
+  </aside>
+  <main id="main" tabindex="-1">
+    <div class="demo-banner"><i data-icon="info"></i><span><strong>Modo demonstração</strong> · Instalação e informações da placa são simuladas.</span><button class="link" data-page="settings">Configurar</button></div>
+    <div id="install-view" hidden>
+      <!-- Kept as a proxy container for compatibility -->
+    </div>
+    <div id="dashboard-view">
+      <div class="page-heading"><div><p class="eyebrow">BC-250 ADRENALINE</p><h1 id="page-title">Visão geral</h1><p id="page-subtitle">Um olhar completo sobre a sua placa.</p></div><div class="page-tools"><span id="sample-status" class="sample-status"><span class="live-dot"></span>Simulação ao vivo</span><button id="pause-button" title="Pausar telemetria simulada"><i data-icon="pause"></i><span>Pausar</span></button></div></div>
+      <section data-view="overview">
+        <div class="device-strip card"><div class="device-icon"><i data-icon="chip"></i></div><div><h2>AMD BC-250 <span class="pill">Cyan Skillfish</span></h2><p>24 Compute Units <span>·</span> 16 GB GDDR6 <span>·</span> PCI 1002:13FE</p></div><div class="device-state"><span class="pill green"><span class="live-dot"></span>Driver instalado · demo</span><span>Adrenaline 0.1-demo</span></div></div>
+        <div class="metric-grid" id="overview-metrics"></div>
+        <section class="card board-panel"><div class="section-heading"><div><h2>Mapa térmico da placa</h2><p>Selecione a APU ou uma memória para ver os detalhes.</p></div><span class="pill">Vista ilustrativa</span></div><div class="board-layout"><div class="board-stage"><div id="thermal-board"></div><div class="board-caption"><span>AMD BC-250</span><span>APU + 8 módulos GDDR6</span></div></div><aside class="component-detail"><span class="eyebrow">COMPONENTE SELECIONADO</span><h3 id="component-name">APU · CPU / GPU</h3><div class="component-reading"><span id="component-temp">—</span><small>°C</small></div><span class="pill" id="component-band">Aguardando</span><dl><div><dt>Sensor</dt><dd id="component-source">Maior entre CPU e GPU</dd></div><div><dt>Origem</dt><dd>Simulada</dd></div><div><dt>Atualização</dt><dd id="sample-interval">1 segundo</dd></div></dl><p class="quiet">As posições das memórias são ilustrativas e não correspondem a canais físicos validados.</p></aside></div><div class="thermal-footer"><div class="scale-label">Escala visual <span class="heat-scale"></span><span>20 °C</span><span>70 °C</span><span>120 °C</span></div><span>As cores não representam limites de segurança.</span></div><div class="memory-grid" id="memory-grid"></div></section>
+        <div class="two-columns"><section class="card chart-panel"><div class="section-heading"><div><h2>Temperatura ao longo do tempo</h2><p>Histórico da sessão · CPU e GPU</p></div><span class="chart-legend"><b class="cpu-key">CPU</b><b class="gpu-key">GPU</b></span></div><div id="temp-chart" class="chart"></div></section><section class="card cooling-panel"><div class="section-heading"><div><h2>Refrigeração e memória</h2><p>Uma visão rápida dos sensores</p></div><i data-icon="fan"></i></div><div class="summary-rows" id="cooling-summary"></div></section></div>
+      </section>
+      <section data-view="sensors" hidden><div class="section-toolbar"><label class="search"><i data-icon="search"></i><input id="sensor-search" placeholder="Buscar sensor…" aria-label="Buscar sensor"></label><button data-action="export"><i data-icon="download"></i>Exportar amostra</button></div><section class="card sensor-table"><table><thead><tr><th>Sensor</th><th>Atual</th><th>Mínimo da sessão</th><th>Máximo da sessão</th><th>Origem</th></tr></thead><tbody id="sensor-rows"></tbody></table><p id="no-sensors" hidden>Nenhum sensor encontrado.</p></section></section>
+      <section data-view="performance" hidden><div class="info-note"><i data-icon="info"></i>Os perfis abaixo alteram apenas os dados da demonstração.</div><div id="scenario-cards" class="scenario-grid"></div><div class="two-columns"><section class="card chart-panel"><div class="section-heading"><div><h2>Uso da CPU</h2><p id="cpu-topology-info">6 núcleos · 12 threads · topologia</p></div><strong id="cpu-load">—</strong></div><div class="chart" id="cpu-chart"></div></section><section class="card chart-panel"><div class="section-heading"><div><h2>Uso da GPU</h2><p>24 Compute Units · topologia</p></div><strong id="gpu-load">—</strong></div><div class="chart" id="gpu-chart"></div></section></div><section class="card"><div class="section-heading"><div><h2>Perfil de frequências</h2><p>Valores de operação da placa</p></div><span class="pill" id="freq-profile-pill">Perfil Ativo</span></div><div class="spec-grid"><div><span>CPU · frequência alvo</span><strong id="perf-cpu-target">3.500 MHz</strong></div><div><span>GPU · faixa de frequência</span><strong>400 – 2.000 MHz</strong></div><div><span>CPU · limite térmico</span><strong>80 °C (Seguro)</strong></div><div><span>Overclock</span><strong id="perf-oc-status">Ativo (SMU Q3 0x8F)</strong></div></div></section><section class="card cpu-oc-card"><div class="section-heading"><div class="heading-icon"><i data-icon="bolt"></i></div><div><h2>Ajuste de Frequência da CPU (Overclock Zen 2)</h2><p>Configuração direta via SMU Q3 0x8F (faixa de 3.0 GHz a 4.2 GHz)</p></div><span class="pill green" id="cpu-oc-badge">3.500 MHz ativo</span></div><div class="oc-panel-body"><div class="oc-slider-row"><div class="oc-label-val"><span>Frequência Alvo de Boost:</span><strong id="cpu-slider-display">3.500 MHz (3.5 GHz)</strong></div><input type="range" id="cpu-freq-slider" min="3000" max="4200" step="100" value="3500" aria-label="Frequência máxima de boost da CPU em MHz"><div class="oc-ticks"><span>3.0 GHz (Min)</span><span>3.5 GHz (Base)</span><span>4.0 GHz (Estável)</span><span>4.2 GHz (Max)</span></div></div><div class="button-row oc-btn-row"><button class="primary" id="btn-apply-cpu-oc"><i data-icon="bolt"></i>Aplicar Frequência</button><button id="btn-reset-cpu-oc">Restaurar Padrão (3.5 GHz)</button></div><p class="quiet" id="cpu-oc-feedback" role="status">Comando SMU testado e comprovado no silício (persistente após reboot).</p><div id="cpu-oc-response-box" class="oc-response-box" hidden><div class="oc-res-header"><strong>Resposta da CPU / Silício:</strong><span id="cpu-res-badge" class="pill blue">Aguardando</span></div><div class="oc-res-details"><div><span>Comando SMU:</span><code id="cpu-res-cmd">Queue 3 · Msg 0x8F (SET_MAX_CPU_BOOST_CLK)</code></div><div><span>Retorno do Hardware:</span><strong id="cpu-res-status">—</strong></div><div><span>Diagnóstico do Sistema:</span><p id="cpu-res-diagnostic">—</p></div><div id="cpu-res-raw-container" hidden><span>Saída Bruta:</span><pre id="cpu-res-raw"></pre></div></div></div></div></section></section>
+      <section data-view="driver" hidden><section class="card driver-card"><div class="success-icon"><i data-icon="check"></i></div><h2>Você concluiu a instalação simulada.</h2><p>Seu ambiente de demonstração está pronto para explorar.</p><span class="pill green">Driver instalado no cenário de demonstração</span><div class="spec-grid"><div><span>Versão simulada</span><strong>0.1-demo</strong></div><div><span>Plataforma alvo</span><strong>Windows x64</strong></div><div><span>Adaptador</span><strong>AMD BC-250</strong></div><div><span>Instalação</span><strong id="installed-at">—</strong></div></div><div class="button-row"><button data-action="check-update"><i data-icon="refresh"></i>Verificar atualizações · demo</button><button data-action="reset">Repetir instalação simulada</button></div><p class="quiet" id="update-result" role="status">Esta prévia não consulta nem altera os drivers do Windows.</p></section></section>
+      <section data-view="system" hidden><div class="two-columns"><section class="card"><div class="section-heading"><div class="heading-icon"><i data-icon="chip"></i></div><h2>Placa e arquitetura</h2></div><dl class="system-list"><div><dt>Adaptador</dt><dd>AMD BC-250</dd></div><div><dt>Codinome</dt><dd>Cyan Skillfish / Oberon</dd></div><div><dt>PCI ID</dt><dd>1002:13FE</dd></div><div><dt>Arquitetura gráfica</dt><dd>GC 10.1.3 · gfx1013</dd></div><div><dt>Compute Units</dt><dd>24 · topologia</dd></div><div><dt>CPU</dt><dd id="system-cpu-spec">6 núcleos / 12 threads · AMD BC-250</dd></div><div><dt>Memória compartilhada</dt><dd>16 GB GDDR6 · 8 chips</dd></div></dl></section><section class="card"><div class="section-heading"><div class="heading-icon"><i data-icon="monitor"></i></div><h2>Monitor e armazenamento</h2></div><dl class="system-list"><div><dt>Monitor</dt><dd id="system-monitor">—</dd></div><div><dt>Resolução</dt><dd>2560 × 1080 · simulado</dd></div><div><dt>Taxa de atualização</dt><dd>60 Hz · simulado</dd></div><div><dt>Conexão</dt><dd>DisplayPort</dd></div><div><dt>NVMe</dt><dd id="system-nvme">—</dd></div><div><dt>Temperatura NVMe</dt><dd data-reading="nvme_temp_c">—</dd></div><div><dt>Fonte dos dados</dt><dd>Demonstração local</dd></div></dl></section></div><div class="info-note"><i data-icon="info"></i>Identificadores da BC-250 vêm da referência. Dispositivos conectados, topologia ativa e medições são fictícios nesta versão.</div></section>
+      <section data-view="settings" hidden><h2 class="group-title">Personalização</h2><div class="settings-stack"><label class="setting-row card"><i data-icon="sun"></i><span><strong>Aparência</strong><small>Escolha como o Adrenaline aparece para você.</small></span><select id="theme-select"><option value="system">Usar tema do Windows</option><option value="light">Claro</option><option value="dark">Escuro</option></select></label><label class="setting-row card"><i data-icon="refresh"></i><span><strong>Intervalo de atualização</strong><small>Frequência das amostras simuladas.</small></span><select id="interval-select"><option value="700">700 milissegundos</option><option value="1000">1 segundo</option><option value="2000">2 segundos</option></select></label></div><h2 class="group-title">Demonstração</h2><div class="settings-stack"><label class="setting-row card"><i data-icon="chart"></i><span><strong>Cenário de telemetria</strong><small>Explore o comportamento das temperaturas e sensores.</small></span><select id="scenario-select"><option value="balanced">Uso cotidiano</option><option value="idle">Em repouso</option><option value="gaming">Em jogo</option><option value="hot">Carga elevada</option><option value="unavailable">Sensores indisponíveis</option></select></label><div class="setting-row card"><i data-icon="download"></i><span><strong>Fluxo de instalação</strong><small>Volte ao primeiro acesso ou abra a dashboard diretamente.</small></span><button data-action="reset">Repetir instalação</button></div><label class="setting-row card"><i data-icon="monitor"></i><span><strong>Nome do monitor</strong><small>Também aparece no SVG da placa.</small></span><input id="monitor-input" maxlength="36" aria-label="Nome do monitor"></label><label class="setting-row card"><i data-icon="disk"></i><span><strong>Modelo e capacidade do NVMe</strong><small>Também aparece no SVG da placa.</small></span><input id="nvme-input" maxlength="40" aria-label="Modelo e capacidade do NVMe"></label><div class="setting-row card"><i data-icon="heart"></i><span><strong>Apoiar o projeto</strong><small>Pix, Bitcoin, Solana e cartão pelo Buy Me a Coffee.</small></span><button data-action="donate">Pagar um café</button></div></div><p class="about-text">BC-250 Adrenaline · 0.1.0 · Projeto independente, sem afiliação à AMD.<br>Interface inspirada no Windows 11. Telemetria de referência: BC250-Telemetry.</p></section>
+      <section data-view="donate" id="donation-view" hidden><section class="card donation-card" id="donation-card"><div class="donation-header"><div class="coffee-icon"><i data-icon="coffee"></i></div><div class="donation-header-text"><span class="eyebrow">FEITO POR UMA PESSOA · APOIADO POR MUITAS</span><h2 id="donation-title">Um café faz a diferença.</h2><p>A AMD tem um time inteiro dedicado ao desenvolvimento de drivers. O driver que você está acompanhando é feito por <strong>apenas um desenvolvedor</strong>.</p><p>Se este projeto deu uma nova vida à sua BC-250, que tal pagar uma xícara de café e ajudar o próximo passo?</p></div><span class="pill real-support">Apoio real · opcional</span></div><div class="payment-tabs" role="tablist" aria-label="Forma de contribuição"><button role="tab" aria-selected="true" aria-controls="payment-panel" data-method="card">▤ Cartão</button><button role="tab" aria-selected="false" aria-controls="payment-panel" tabindex="-1" data-method="crypto">◈ Cripto</button><button role="tab" aria-selected="false" aria-controls="payment-panel" tabindex="-1" data-method="pix">◇ Pix</button></div><div id="payment-panel" class="payment-panel" role="tabpanel"></div><p id="payment-status" role="status" aria-live="polite"></p><p class="payment-disclaimer">Os dados de apoio são reais. A instalação e a telemetria continuam simuladas. O app não confirma pagamentos.</p><div class="button-row donation-actions"><button class="primary" id="btn-finish-donation" data-action="close-donation">Continuar para a Visão geral <span>→</span></button><button class="link skip-donation" data-action="close-donation">Continuar sem contribuir →</button></div></section></section>
+      <footer class="main-footer"><span>BC-250 Adrenaline <span>·</span> Feito para dar uma nova vida à sua placa.</span><span id="last-update">Aguardando amostra</span></footer>
+    </div>
+    <div id="locked-view" hidden><div class="page-heading"><div><h1 id="locked-title">Sensores</h1><p>Conclua a instalação de demonstração para explorar esta área.</p></div></div><section class="card empty-state"><i data-icon="shield"></i><h2>Vamos preparar sua BC-250?</h2><p>A dashboard fica disponível após o fluxo de instalação simulado.</p><button class="primary" data-action="go-install">Ir para instalação</button><button class="link" data-action="skip-install">Simular driver já instalado</button></section></div>
+  </main>
+</div>
+
 <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Repetir a demonstração?</h2><p>O estado de instalação simulado será removido. Suas preferências de aparência serão mantidas.</p><div class="button-row"><button data-action="cancel-reset">Cancelar</button><button class="primary" data-action="confirm-reset">Voltar ao início</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 </body></html>

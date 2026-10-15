@@ -437,7 +437,40 @@ uint32_t Bc250GcvmInvalidateRequestValue(uint32_t Vmid, uint32_t FlushType)
         BC250_GCVM_INV_REQ_ALL_LEVELS;
 }
 
+static BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidateAnyVmid(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine,
+    uint32_t Vmid,
+    uint32_t FlushType);
+
 BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidate(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine,
+    uint32_t Vmid,
+    uint32_t FlushType)
+{
+    if (Vmid == 0u) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    return Bc250SdmaEmitVmInvalidateAnyVmid(RingBuffer, RingDwords, CursorDwords,
+        Engine, Vmid, FlushType);
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitGartInvalidate(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine)
+{
+    return Bc250SdmaEmitVmInvalidateAnyVmid(RingBuffer, RingDwords, CursorDwords,
+        Engine, 0u, 0u);
+}
+
+static BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidateAnyVmid(
     uint32_t *RingBuffer,
     uint32_t RingDwords,
     uint32_t *CursorDwords,
@@ -453,7 +486,7 @@ BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidate(
     if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
         return BC250_SDMA_BAD_ARGUMENT;
     }
-    if (Vmid == 0u || Vmid >= 16u || FlushType > 7u ||
+    if (Vmid >= 16u || FlushType > 7u ||
         Engine >= BC250_GCVM_INV_ENG_COUNT || Engine == 17u) {
         return BC250_SDMA_BAD_ARGUMENT;
     }

@@ -270,6 +270,20 @@ BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidate(
     uint32_t FlushType);
 
 /*
+ * COMP.VA (doc 743): invalidacao da VMID 0 (GART) pelo SDMA, no anel, com a
+ * mesma sequencia de 15 dwords. Uso UNICO: a janela de transferencia da GART
+ * (entradas 256..511), regravada pela CPU antes de cada pedaco da composicao,
+ * como amdgpu_ttm_map_buffer usa a janela de GTT do buffer_funcs_ring. A
+ * invalidacao so' descarta traducoes em cache; as entradas do MEC, do anel e
+ * do IH nao mudam, entao sao re-caminhadas com o mesmo valor.
+ */
+BC250_SDMA_STATUS Bc250SdmaEmitGartInvalidate(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine);
+
+/*
  * 4c.4 (doc 575) -- IB DE PAGINACAO DIVIDIDO NO ANEL NOS PONTOS DE FlushTlb.
  *
  * Com PageTableUpdateMode=GPU_VIRTUAL o contrato poe no MESMO paging buffer

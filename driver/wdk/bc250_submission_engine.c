@@ -265,7 +265,7 @@ BOOLEAN Bc250ActiveD2GartShareWithMec(
     }
     Buffers->PtVirtual = (volatile void *)table;
     Buffers->PtGpuAddress = Context->Core.TopologyEvidence.AddressSpace.VramMcStart +
-        BC250_D2_GART_TABLE_VRAM_OFFSET;
+        Context->D2GartTableOffset; /* COMP.VA.3: reserva propria (doc 745) */
     Buffers->PtSizeBytes = BC250_GCVM_GART_ENTRIES * sizeof(uint64_t);
     Buffers->Context0External = 1u;
     InterlockedExchange(&Context->D2GartSharedWithMec, 1);
